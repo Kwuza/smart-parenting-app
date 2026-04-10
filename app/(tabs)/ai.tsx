@@ -124,9 +124,10 @@ export default function AIScreen() {
   // Load saved recommendations on focus
   useFocusEffect(
     useCallback(() => {
-      if (selectedChild) {
+      const cid = useApp.getState().selectedChild?.id;
+      if (cid) {
         setLoading(true);
-        getRecommendations(selectedChild.id)
+        getRecommendations(cid)
           .then((data) => {
             setRecommendations(data);
             if (data.length > 0) setLastRun(new Date());
@@ -139,10 +140,11 @@ export default function AIScreen() {
 
   // Generate local recommendations from activity data
   const handleAnalyze = async () => {
-    if (!selectedChild) return;
+    const child = useApp.getState().selectedChild;
+    if (!child) return;
     setAnalyzing(true);
     try {
-      const activities = await getActivitySummary(selectedChild.id);
+      const activities = await getActivitySummary(child.id);
       const localRecs: Recommendation[] = [];
 
       // Analyze screen time
@@ -156,7 +158,7 @@ export default function AIScreen() {
       if (avgScreenMins > 120) {
         localRecs.push({
           id: 'local-screen-1',
-          child_id: selectedChild.id,
+          child_id: child.id,
           content: `Average screen time is ${Math.round(avgScreenMins / 60 * 10) / 10}h/day this week. Consider setting daily limits to 2 hours for healthier habits.`,
           category: 'screen_time',
           priority: avgScreenMins > 180 ? 'high' : 'medium',
@@ -175,7 +177,7 @@ export default function AIScreen() {
       if (avgSleepHrs > 0 && avgSleepHrs < 9) {
         localRecs.push({
           id: 'local-sleep-1',
-          child_id: selectedChild.id,
+          child_id: child.id,
           content: `Average sleep is ${Math.round(avgSleepHrs * 10) / 10}h/night. Children aged 6-12 need 9-12 hours. Consider an earlier bedtime.`,
           category: 'sleep',
           priority: avgSleepHrs < 7 ? 'high' : 'medium',
@@ -188,7 +190,7 @@ export default function AIScreen() {
       if (mealActivities.length < 7) {
         localRecs.push({
           id: 'local-meal-1',
-          child_id: selectedChild.id,
+          child_id: child.id,
           content: `Only ${mealActivities.length} meals logged this week. Consistent meal tracking helps identify nutritional gaps.`,
           category: 'meal',
           priority: 'low',
@@ -206,7 +208,7 @@ export default function AIScreen() {
       if (totalEduMins < 30) {
         localRecs.push({
           id: 'local-edu-1',
-          child_id: selectedChild.id,
+          child_id: child.id,
           content: `Learning time is low this week (${totalEduMins} mins total). Try reading together for 15-20 minutes daily.`,
           category: 'education',
           priority: 'medium',
@@ -218,7 +220,7 @@ export default function AIScreen() {
       if (localRecs.length === 0) {
         localRecs.push({
           id: 'local-default-1',
-          child_id: selectedChild.id,
+          child_id: child.id,
           content: activities.length === 0
             ? 'Start logging daily activities to get personalized insights about screen time, sleep, meals, and learning habits.'
             : 'Looking good! Keep logging activities consistently for more detailed insights.',

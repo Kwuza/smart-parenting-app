@@ -174,34 +174,39 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [todayActivities, setTodayActivities] = useState<Activity[]>([]);
 
-  const loadTodayData = async () => {
-    if (selectedChild) {
-      try {
-        const activities = await getTodayActivities(selectedChild.id);
+  const loadDashboardData = async (childId?: string) => {
+    try {
+      // Refresh children list first
+      await loadChildren();
+      // Use passed childId or resolve from current store state
+      const cid = childId || useApp.getState().selectedChild?.id;
+      if (cid) {
+        const activities = await getTodayActivities(cid);
         setTodayActivities(activities);
-      } catch (err) {
-        console.error('Failed to load activities:', err);
+      } else {
+        setTodayActivities([]);
       }
-    } else {
-      setTodayActivities([]);
+    } catch (err) {
+      console.error('Failed to load dashboard:', err);
     }
   };
 
   useFocusEffect(
     useCallback(() => {
-      loadChildren().then(() => loadTodayData());
+      loadDashboardData();
     }, [])
   );
 
-  // Reload activities when selectedChild changes
+  // Also reload when selectedChild changes (e.g. user switches child)
   useEffect(() => {
-    loadTodayData();
+    if (selectedChild) {
+      loadDashboardData(selectedChild.id);
+    }
   }, [selectedChild?.id]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadChildren();
-    await loadTodayData();
+    await loadDashboardData();
     setRefreshing(false);
   };
 
