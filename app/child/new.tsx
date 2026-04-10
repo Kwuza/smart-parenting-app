@@ -4,13 +4,14 @@ import { TextInput, Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { createChild } from '../../lib/api';
-import { useApp } from '../../stores/auth';
+import { useApp, useAuth } from '../../stores/auth';
 
 export default function NewChildScreen() {
   const [name, setName] = useState('');
   const [dob, setDob] = useState('');
   const [loading, setLoading] = useState(false);
   const { loadChildren } = useApp();
+  const { user } = useAuth();
   const router = useRouter();
 
   // Quick date helpers
@@ -35,13 +36,17 @@ export default function NewChildScreen() {
       Alert.alert('Name required', "Please enter your child's name.");
       return;
     }
+    if (!user?.id) {
+      Alert.alert('Error', 'Not signed in. Please log in again.');
+      return;
+    }
     setLoading(true);
     try {
-      await createChild(name.trim(), dob);
+      await createChild(name.trim(), dob, user.id);
       await loadChildren();
       router.back();
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      Alert.alert('Error', err.message || 'Failed to create profile');
     } finally {
       setLoading(false);
     }
@@ -161,9 +166,9 @@ export default function NewChildScreen() {
         {/* Create Button */}
         <TouchableOpacity
           onPress={handleCreate}
-          disabled={loading || !name.trim()}
+          disabled={loading || !name.trim() || !user?.id}
           activeOpacity={0.85}
-          style={[styles.createButtonWrapper, !name.trim() && styles.createButtonDisabled]}
+          style={[styles.createButtonWrapper, (!name.trim() || !user?.id) && styles.createButtonDisabled]}
         >
           <View style={styles.createButton}>
             <Text style={styles.createButtonText}>
