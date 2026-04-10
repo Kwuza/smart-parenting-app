@@ -1,26 +1,8 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
-import { useRouter } from 'expo-router';
-
-// Floating center action button for Log Activity
-function LogActionButton({ onPress }: { onPress: () => void }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.85}
-      style={styles.fab}
-    >
-      <View style={styles.fabInner}>
-        <Ionicons name="add" size={28} color="#FFFFFF" />
-      </View>
-    </TouchableOpacity>
-  );
-}
+import { View, StyleSheet } from 'react-native';
 
 export default function TabsLayout() {
-  const router = useRouter();
-
   return (
     <Tabs
       screenOptions={{
@@ -36,8 +18,8 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size, focused }) => (
-            <View style={focused ? styles.activeTabIcon : undefined}>
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIcon : undefined}>
               <Ionicons
                 name={focused ? 'home' : 'home-outline'}
                 size={22}
@@ -50,9 +32,15 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="log"
         options={{
-          title: '',
-          tabBarButton: () => (
-            <LogActionButton onPress={() => router.push('/log')} />
+          title: 'Log',
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIcon : undefined}>
+              <Ionicons
+                name={focused ? 'add-circle' : 'add-circle-outline'}
+                size={22}
+                color={color}
+              />
+            </View>
           ),
         }}
       />
@@ -60,8 +48,8 @@ export default function TabsLayout() {
         name="ai"
         options={{
           title: 'Insights',
-          tabBarIcon: ({ color, size, focused }) => (
-            <View style={focused ? styles.activeTabIcon : undefined}>
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIcon : undefined}>
               <Ionicons
                 name={focused ? 'bulb' : 'bulb-outline'}
                 size={22}
@@ -75,8 +63,8 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color, size, focused }) => (
-            <View style={focused ? styles.activeTabIcon : undefined}>
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.activeIcon : undefined}>
               <Ionicons
                 name={focused ? 'settings' : 'settings-outline'}
                 size={22}
@@ -95,7 +83,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
-    height: 68,
+    height: 64,
     paddingBottom: 8,
     paddingTop: 8,
   },
@@ -104,28 +92,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 2,
   },
-  activeTabIcon: {
+  activeIcon: {
     backgroundColor: '#EFF6FF',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 4,
     borderRadius: 10,
-  },
-  fab: {
-    top: -18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fabInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#3B82F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 8,
   },
 });

@@ -29,31 +29,27 @@ function formatTime(dateStr: string): string {
   });
 }
 
-function getActivityLabel(type: ActivityType, value: Record<string, any>): string {
+function getActivityLabel(type: string, value: Record<string, any>): string {
+  const h = value.hours || 0;
+  const m = value.minutes || 0;
+  const dur = h > 0 ? `${h}h ${m}m` : `${m}m`;
+
   switch (type) {
-    case 'screen_time': {
-      const h = value.hours || 0;
-      const m = value.minutes || 0;
-      const device = value.device || '';
-      return `Screen time — ${h > 0 ? `${h}h ` : ''}${m}m${device ? ` on ${device}` : ''}`;
-    }
-    case 'sleep': {
-      const h = value.hours || 0;
-      const m = value.minutes || 0;
-      const q = value.quality || '';
-      return `Sleep — ${h > 0 ? `${h}h ` : ''}${m}m${q ? ` (${q})` : ''}`;
-    }
+    case 'screen_time':
+      return `Screen time — ${dur}${value.device ? ` on ${value.device}` : ''}`;
+    case 'sleep':
+      return `Sleep — ${dur}${value.quality ? ` (${value.quality})` : ''}`;
+    case 'nap':
+      return `Nap — ${dur}${value.quality ? ` (${value.quality})` : ''}`;
     case 'meal': {
       const meal = value.meal_type || 'meal';
-      const q = value.quality || '';
-      return `${meal.charAt(0).toUpperCase() + meal.slice(1)}${q ? ` — ${q}` : ''}`;
+      const foods = value.food_groups?.length ? ` · ${value.food_groups.join(', ')}` : '';
+      return `${meal.charAt(0).toUpperCase() + meal.slice(1)}${value.quality ? ` — ${value.quality}` : ''}${foods}`;
     }
-    case 'education': {
-      const h = value.hours || 0;
-      const m = value.minutes || 0;
-      const s = value.subject || '';
-      return `Learning — ${h > 0 ? `${h}h ` : ''}${m}m${s ? ` (${s.replace('_', ' ')})` : ''}`;
-    }
+    case 'physical_activity':
+      return `Physical — ${dur}${value.activity ? ` (${value.activity})` : ''}`;
+    case 'education':
+      return `Learning — ${dur}${value.subject ? ` (${value.subject.replace('_', ' ')})` : ''}`;
     default:
       return type;
   }
@@ -147,8 +143,10 @@ function RecentItem({ activity }: { activity: Activity }) {
   const typeConfig: Record<string, { color: string; bg: string; letter: string }> = {
     screen_time: { color: '#3B82F6', bg: '#EFF6FF', letter: 'S' },
     sleep: { color: '#10B981', bg: '#ECFDF5', letter: 'Z' },
+    nap: { color: '#8B5CF6', bg: '#F5F3FF', letter: 'N' },
     meal: { color: '#F59E0B', bg: '#FFFBEB', letter: 'M' },
-    education: { color: '#8B5CF6', bg: '#F5F3FF', letter: 'E' },
+    physical_activity: { color: '#EF4444', bg: '#FEF2F2', letter: 'A' },
+    education: { color: '#6366F1', bg: '#EEF2FF', letter: 'E' },
   };
   const config = typeConfig[activity.type] || typeConfig.screen_time;
 
