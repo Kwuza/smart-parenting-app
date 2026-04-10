@@ -1,6 +1,9 @@
-import { Stack } from 'expo-router';
+import { useEffect } from 'react';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { PaperProvider, MD3LightTheme } from 'react-native-paper';
 import { StatusBar } from 'expo-status-bar';
+import { useAuth } from '../stores/auth';
+import { View, ActivityIndicator } from 'react-native';
 
 const theme = {
   ...MD3LightTheme,
@@ -19,7 +22,6 @@ const theme = {
     onBackground: '#0F172A',
     outline: '#E2E8F0',
     outlineVariant: '#F1F5F9',
-    // Activity-specific
     screenTime: '#3B82F6',
     screenTimeBg: '#EFF6FF',
     sleep: '#10B981',
@@ -32,6 +34,37 @@ const theme = {
 };
 
 export default function RootLayout() {
+  const { user, loading, loadSession } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    loadSession();
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const inAuthGroup = segments[0] === '(auth)';
+    const inTabsGroup = segments[0] === '(tabs)';
+
+    if (!user && !inAuthGroup) {
+      // Not logged in and not on auth screens — redirect to login
+      router.replace('/(auth)/login');
+    } else if (user && inAuthGroup) {
+      // Logged in but on auth screens — redirect to dashboard
+      router.replace('/(tabs)');
+    }
+  }, [user, loading, segments]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
+    );
+  }
+
   return (
     <PaperProvider theme={theme}>
       <StatusBar style="auto" />

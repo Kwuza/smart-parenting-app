@@ -28,7 +28,9 @@ export const useAuth = create<AuthState>((set) => ({
       options: { data: { name } },
     });
     if (error) throw error;
-    set({ user: data.user });
+    // Don't auto-login after signup — user should confirm email if required,
+    // then log in manually. This prevents the "signed up but can't login" issue.
+    // If email confirmation is disabled in Supabase, the user can still log in after.
   },
 
   signOut: async () => {

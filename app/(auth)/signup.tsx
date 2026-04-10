@@ -9,26 +9,45 @@ export default function SignupScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
   const router = useRouter();
 
   const handleSignup = async () => {
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert('Weak Password', 'Password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
       return;
     }
     setLoading(true);
     try {
       await signUp(email, password, name);
-      router.replace('/(tabs)');
+      // After signup, check if email confirmation is needed
+      // If signUp didn't throw, the user was created
+      // Show a message about email confirmation
+      Alert.alert(
+        'Account Created',
+        'You can now sign in with your credentials.',
+        [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
+      );
     } catch (err: any) {
       Alert.alert('Signup Failed', err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  const passwordsMatch = confirmPassword.length === 0 || password === confirmPassword;
 
   return (
     <KeyboardAvoidingView
@@ -131,10 +150,43 @@ export default function SignupScreen() {
             </View>
           </View>
 
+          {/* Confirm Password */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Confirm Password</Text>
+            <View style={[styles.inputWrapper, !passwordsMatch && styles.inputError]}>
+              <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
+              <TextInput
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="••••••••"
+                secureTextEntry={!showConfirm}
+                autoComplete="new-password"
+                style={styles.input}
+                underlineColorAndroid="transparent"
+                activeUnderlineColor="transparent"
+                placeholderTextColor="#94A3B8"
+                contentStyle={styles.inputContent}
+              />
+              <TouchableOpacity
+                onPress={() => setShowConfirm(!showConfirm)}
+                style={styles.eyeButton}
+              >
+                <Ionicons
+                  name={showConfirm ? 'eye-off-outline' : 'eye-outline'}
+                  size={18}
+                  color="#94A3B8"
+                />
+              </TouchableOpacity>
+            </View>
+            {!passwordsMatch && (
+              <Text style={styles.errorText}>Passwords do not match</Text>
+            )}
+          </View>
+
           {/* Signup Button */}
           <TouchableOpacity
             onPress={handleSignup}
-            disabled={loading}
+            disabled={loading || !name || !email || !password || !confirmPassword || !passwordsMatch}
             activeOpacity={0.85}
             style={styles.loginButtonWrapper}
           >
@@ -266,6 +318,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 52,
   },
+  inputError: {
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FFF5F5',
+  },
   inputIcon: {
     marginRight: 10,
   },
@@ -282,6 +338,11 @@ const styles = StyleSheet.create({
   eyeButton: {
     padding: 4,
     marginLeft: 4,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginTop: 6,
   },
   loginButtonWrapper: {
     marginTop: 8,
