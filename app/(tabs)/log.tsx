@@ -1,23 +1,23 @@
 import { useState } from 'react';
 import { View, ScrollView, StyleSheet, Alert, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
-import { TextInput, Text, useTheme } from 'react-native-paper';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { TextInput, Text } from 'react-native-paper';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../stores/auth';
 import { logActivity, ActivityType } from '../../lib/api';
 
-const ACTIVITY_TYPES = [
-  { key: 'screen_time' as ActivityType, label: 'Screen' },
-  { key: 'sleep' as ActivityType, label: 'Sleep' },
-  { key: 'meal' as ActivityType, label: 'Meals' },
-  { key: 'education' as ActivityType, label: 'Learn' },
+const ACTIVITY_TYPES: { key: ActivityType; label: string; icon: keyof typeof Ionicons.glyphMap; color: string; bgColor: string }[] = [
+  { key: 'screen_time', label: 'Screen', icon: 'phone-portrait-outline', color: '#3B82F6', bgColor: '#EFF6FF' },
+  { key: 'sleep', label: 'Sleep', icon: 'moon-outline', color: '#10B981', bgColor: '#ECFDF5' },
+  { key: 'meal', label: 'Meals', icon: 'restaurant-outline', color: '#F59E0B', bgColor: '#FFFBEB' },
+  { key: 'education', label: 'Learn', icon: 'school-outline', color: '#8B5CF6', bgColor: '#F5F3FF' },
 ];
 
 const DEVICES = [
-  { key: 'phone', icon: 'phone-portrait-outline' as const, label: 'Phone' },
-  { key: 'tablet', icon: 'tablet-portrait-outline' as const, label: 'Tablet' },
-  { key: 'tv', icon: 'tv-outline' as const, label: 'TV' },
-  { key: 'computer', icon: 'desktop-outline' as const, label: 'PC' },
+  { key: 'phone', label: 'Phone', icon: 'phone-portrait-outline' as const },
+  { key: 'tablet', label: 'Tablet', icon: 'tablet-portrait-outline' as const },
+  { key: 'tv', label: 'TV', icon: 'tv-outline' as const },
+  { key: 'computer', label: 'PC', icon: 'desktop-outline' as const },
 ];
 
 const MEALS = [
@@ -37,34 +37,6 @@ const SUBJECTS = [
   { key: 'homework', label: 'Homework' },
   { key: 'learning_app', label: 'App' },
 ];
-
-function SegmentedControl({
-  value,
-  onChange,
-}: {
-  value: ActivityType;
-  onChange: (v: ActivityType) => void;
-}) {
-  return (
-    <View style={styles.segmentContainer}>
-      {ACTIVITY_TYPES.map((t) => {
-        const isActive = value === t.key;
-        return (
-          <TouchableOpacity
-            key={t.key}
-            onPress={() => onChange(t.key)}
-            style={[styles.segmentBtn, isActive && styles.segmentBtnActive]}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.segmentText, isActive && styles.segmentTextActive]}>
-              {t.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
 
 function ChipSelector({
   items,
@@ -106,14 +78,65 @@ function ChipSelector({
   );
 }
 
-export default function LogActivityScreen() {
-  const { type } = useLocalSearchParams<{ type?: string }>();
-  const [activityType, setActivityType] = useState<ActivityType>(
-    (type as ActivityType) || 'screen_time'
+function DurationInput({
+  hours,
+  minutes,
+  onHoursChange,
+  onMinutesChange,
+}: {
+  hours: string;
+  minutes: string;
+  onHoursChange: (v: string) => void;
+  onMinutesChange: (v: string) => void;
+}) {
+  return (
+    <View style={styles.durationRow}>
+      <View style={styles.durationField}>
+        <TouchableOpacity
+          style={styles.durationStepper}
+          onPress={() => onHoursChange(String(Math.min(23, (parseInt(hours) || 0) + 1)))}
+          activeOpacity={0.6}
+        >
+          <Ionicons name="add" size={20} color="#3B82F6" />
+        </TouchableOpacity>
+        <Text style={styles.durationValue}>{hours}</Text>
+        <TouchableOpacity
+          style={styles.durationStepper}
+          onPress={() => onHoursChange(String(Math.max(0, (parseInt(hours) || 0) - 1)))}
+          activeOpacity={0.6}
+        >
+          <Ionicons name="remove" size={20} color="#64748B" />
+        </TouchableOpacity>
+        <Text style={styles.durationLabel}>hrs</Text>
+      </View>
+      <View style={styles.durationDivider} />
+      <View style={styles.durationField}>
+        <TouchableOpacity
+          style={styles.durationStepper}
+          onPress={() => onMinutesChange(String(Math.min(59, (parseInt(minutes) || 0) + 5)))}
+          activeOpacity={0.6}
+        >
+          <Ionicons name="add" size={20} color="#3B82F6" />
+        </TouchableOpacity>
+        <Text style={styles.durationValue}>{minutes}</Text>
+        <TouchableOpacity
+          style={styles.durationStepper}
+          onPress={() => onMinutesChange(String(Math.max(0, (parseInt(minutes) || 0) - 5)))}
+          activeOpacity={0.6}
+        >
+          <Ionicons name="remove" size={20} color="#64748B" />
+        </TouchableOpacity>
+        <Text style={styles.durationLabel}>min</Text>
+      </View>
+    </View>
   );
+}
+
+export default function LogActivityScreen() {
+  const [activityType, setActivityType] = useState<ActivityType>('screen_time');
   const [loading, setLoading] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const { selectedChild } = useApp();
+  const [success, setSuccess] = useState(false);
+  const { selectedChild, children } = useApp();
   const router = useRouter();
 
   // Screen time
@@ -138,118 +161,122 @@ export default function LogActivityScreen() {
   // Notes
   const [notes, setNotes] = useState('');
 
+  const activeType = ACTIVITY_TYPES.find((t) => t.key === activityType)!;
+
   const handleLog = async () => {
     if (!selectedChild) {
-      Alert.alert('Error', 'No child selected');
+      Alert.alert('No child selected', 'Add a child profile first.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Add Child', onPress: () => router.push('/child/new') },
+      ]);
       return;
     }
+
     setLoading(true);
     try {
       let value: Record<string, any> = {};
       switch (activityType) {
         case 'screen_time':
-          value = {
-            hours: parseInt(hours) || 0,
-            minutes: parseInt(minutes) || 0,
-            device,
-          };
+          value = { hours: parseInt(hours) || 0, minutes: parseInt(minutes) || 0, device };
           break;
         case 'sleep':
-          value = {
-            hours: parseInt(sleepHours) || 0,
-            minutes: parseInt(sleepMinutes) || 0,
-            quality: sleepQuality,
-          };
+          value = { hours: parseInt(sleepHours) || 0, minutes: parseInt(sleepMinutes) || 0, quality: sleepQuality };
           break;
         case 'meal':
           value = { meal_type: mealType, quality: mealQuality };
           break;
         case 'education':
-          value = {
-            hours: parseInt(eduHours) || 0,
-            minutes: parseInt(eduMinutes) || 0,
-            subject,
-          };
+          value = { hours: parseInt(eduHours) || 0, minutes: parseInt(eduMinutes) || 0, subject };
           break;
       }
       if (notes) value.notes = notes;
 
       await logActivity(selectedChild.id, activityType, value);
-      setShowSuccess(true);
+      setSuccess(true);
       setTimeout(() => {
-        setShowSuccess(false);
+        setSuccess(false);
         router.back();
-      }, 1500);
+      }, 1800);
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      Alert.alert('Error', err.message || 'Failed to log activity');
     } finally {
       setLoading(false);
     }
   };
 
-  const durationLabel =
-    activityType === 'sleep'
-      ? 'Sleep Duration'
-      : activityType === 'education'
-        ? 'Learning Time'
-        : 'Screen Time';
+  // Success overlay
+  if (success) {
+    return (
+      <View style={styles.successContainer}>
+        <View style={styles.successCheck}>
+          <Ionicons name="checkmark-circle" size={72} color="#10B981" />
+        </View>
+        <Text style={styles.successTitle}>Logged!</Text>
+        <Text style={styles.successSubtitle}>
+          {activeType.label} recorded for {selectedChild?.name || 'your child'}
+        </Text>
+      </View>
+    );
+  }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backBtn}
-        >
-          <Ionicons name="arrow-back" size={20} color="#0F172A" />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="close" size={20} color="#0F172A" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Log Activity</Text>
-        <View style={{ width: 40 }} />
+        {selectedChild ? (
+          <View style={styles.headerChild}>
+            <Text style={styles.headerChildText}>{selectedChild.name}</Text>
+          </View>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Segmented Control */}
-        <SegmentedControl value={activityType} onChange={setActivityType} />
+        {/* Activity Type Selector — Large cards */}
+        <Text style={styles.sectionLabel}>What are you logging?</Text>
+        <View style={styles.typeGrid}>
+          {ACTIVITY_TYPES.map((t) => {
+            const isActive = activityType === t.key;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                onPress={() => setActivityType(t.key)}
+                style={[
+                  styles.typeCard,
+                  isActive && { borderColor: t.color, backgroundColor: t.bgColor },
+                ]}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.typeIcon, { backgroundColor: isActive ? t.color : '#F1F5F9' }]}>
+                  <Ionicons name={t.icon} size={22} color={isActive ? '#FFFFFF' : '#64748B'} />
+                </View>
+                <Text style={[styles.typeLabel, isActive && { color: t.color }]}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
-        {/* Duration (screen time, sleep, education) */}
+        {/* Duration (screen, sleep, education) */}
         {activityType !== 'meal' && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>{durationLabel}</Text>
-            <View style={styles.durationRow}>
-              <View style={styles.durationField}>
-                <TextInput
-                  value={activityType === 'sleep' ? sleepHours : activityType === 'education' ? eduHours : hours}
-                  onChangeText={activityType === 'sleep' ? setSleepHours : activityType === 'education' ? setEduHours : setHours}
-                  keyboardType="numeric"
-                  style={styles.durationInput}
-                  underlineColorAndroid="transparent"
-                  activeUnderlineColor="transparent"
-                  contentStyle={styles.durationInputContent}
-                  maxLength={2}
-                />
-                <Text style={styles.durationLabel}>hrs</Text>
-              </View>
-              <View style={styles.durationField}>
-                <TextInput
-                  value={activityType === 'sleep' ? sleepMinutes : activityType === 'education' ? eduMinutes : minutes}
-                  onChangeText={activityType === 'sleep' ? setSleepMinutes : activityType === 'education' ? setEduMinutes : setMinutes}
-                  keyboardType="numeric"
-                  style={styles.durationInput}
-                  underlineColorAndroid="transparent"
-                  activeUnderlineColor="transparent"
-                  contentStyle={styles.durationInputContent}
-                  maxLength={2}
-                />
-                <Text style={styles.durationLabel}>min</Text>
-              </View>
-            </View>
+            <Text style={styles.cardTitle}>Duration</Text>
+            <DurationInput
+              hours={activityType === 'sleep' ? sleepHours : activityType === 'education' ? eduHours : hours}
+              minutes={activityType === 'sleep' ? sleepMinutes : activityType === 'education' ? eduMinutes : minutes}
+              onHoursChange={activityType === 'sleep' ? setSleepHours : activityType === 'education' ? setEduHours : setHours}
+              onMinutesChange={activityType === 'sleep' ? setSleepMinutes : activityType === 'education' ? setEduMinutes : setMinutes}
+            />
           </View>
         )}
 
@@ -268,7 +295,7 @@ export default function LogActivityScreen() {
           )}
           {activityType === 'sleep' && (
             <>
-              <Text style={styles.cardTitle}>Sleep Quality</Text>
+              <Text style={styles.cardTitle}>Quality</Text>
               <ChipSelector items={QUALITY} value={sleepQuality} onChange={setSleepQuality} />
             </>
           )}
@@ -276,7 +303,7 @@ export default function LogActivityScreen() {
             <>
               <Text style={styles.cardTitle}>Meal</Text>
               <ChipSelector items={MEALS} value={mealType} onChange={setMealType} />
-              <Text style={[styles.cardTitle, { marginTop: 16 }]}>Quality</Text>
+              <Text style={[styles.cardTitle, { marginTop: 20 }]}>Quality</Text>
               <ChipSelector items={QUALITY} value={mealQuality} onChange={setMealQuality} />
             </>
           )}
@@ -290,11 +317,11 @@ export default function LogActivityScreen() {
 
         {/* Notes */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Notes (optional)</Text>
+          <Text style={styles.cardTitle}>Notes</Text>
           <TextInput
             value={notes}
             onChangeText={setNotes}
-            placeholder="Add any additional details..."
+            placeholder="Optional — add any details..."
             multiline
             numberOfLines={3}
             style={styles.notesInput}
@@ -305,28 +332,46 @@ export default function LogActivityScreen() {
           />
         </View>
 
-        {/* Bottom spacer for fixed button */}
-        <View style={{ height: 100 }} />
-      </ScrollView>
-
-      {/* Bottom Log Button */}
-      <View style={styles.bottomBar}>
+        {/* Log Button — in flow, not fixed */}
         <TouchableOpacity
           onPress={handleLog}
-          disabled={loading || showSuccess}
+          disabled={loading || !selectedChild}
           activeOpacity={0.85}
-          style={styles.logButton}
+          style={[
+            styles.logButton,
+            !selectedChild && styles.logButtonDisabled,
+            loading && styles.logButtonLoading,
+          ]}
         >
-          <Text style={styles.logButtonText}>
-            {showSuccess
-              ? 'Logged!'
-              : loading
-                ? 'Logging...'
-                : `Log ${ACTIVITY_TYPES.find((t) => t.key === activityType)?.label}`}
-          </Text>
+          {loading ? (
+            <View style={styles.loadingRow}>
+              <View style={styles.spinner} />
+              <Text style={styles.logButtonText}>Logging…</Text>
+            </View>
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.logButtonText}>Log {activeType.label}</Text>
+            </>
+          )}
         </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+
+        {/* No child hint */}
+        {!selectedChild && (
+          <TouchableOpacity
+            style={styles.noChildHint}
+            onPress={() => router.push('/child/new')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="information-circle-outline" size={16} color="#3B82F6" />
+            <Text style={styles.noChildText}>Add a child profile to start logging</Text>
+            <Ionicons name="chevron-forward" size={14} color="#3B82F6" />
+          </TouchableOpacity>
+        )}
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </View>
   );
 }
 
@@ -342,13 +387,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 12,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
   backBtn: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(241,245,249,0.7)',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -357,83 +404,106 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0F172A',
   },
+  headerChild: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  headerChildText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#3B82F6',
+  },
   scrollContent: {
     padding: 20,
-    paddingTop: 8,
   },
-  segmentContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 20,
-  },
-  segmentBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 11,
-    alignItems: 'center',
-  },
-  segmentBtnActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  segmentText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#64748B',
-  },
-  segmentTextActive: {
-    color: '#0F172A',
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  cardTitle: {
+  sectionLabel: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#0F172A',
     marginBottom: 12,
   },
-  durationRow: {
+  // Type selector
+  typeGrid: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
+    marginBottom: 20,
   },
-  durationField: {
+  typeCard: {
     flex: 1,
     alignItems: 'center',
-  },
-  durationInput: {
-    backgroundColor: '#F8FAFC',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+  },
+  typeIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  typeLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  // Cards
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 20,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    fontSize: 28,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0F172A',
+    marginBottom: 12,
+  },
+  // Duration
+  durationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+  },
+  durationField: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  durationStepper: {
+    width: 44,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  durationValue: {
+    fontSize: 36,
     fontWeight: '700',
     color: '#0F172A',
-    textAlign: 'center',
-    height: 64,
-  },
-  durationInputContent: {
-    paddingVertical: 0,
+    marginVertical: 4,
   },
   durationLabel: {
     fontSize: 12,
     color: '#94A3B8',
-    marginTop: 6,
+    fontWeight: '500',
   },
+  durationDivider: {
+    width: 1,
+    height: 80,
+    backgroundColor: '#E2E8F0',
+  },
+  // Chips
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -446,7 +516,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
     backgroundColor: '#F1F5F9',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: 'transparent',
   },
   chipActive: {
@@ -461,43 +531,96 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: '#3B82F6',
   },
+  // Notes
   notesInput: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
     fontSize: 14,
     color: '#0F172A',
     minHeight: 80,
     textAlignVertical: 'top',
-    borderWidth: 0,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   notesContent: {
-    padding: 16,
+    padding: 14,
   },
-  bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 20,
-    paddingBottom: 32,
-    paddingTop: 16,
-    backgroundColor: 'transparent',
-  },
+  // Log button
   logButton: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 16,
-    height: 52,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#3B82F6',
+    borderRadius: 16,
+    height: 56,
+    marginTop: 8,
     shadowColor: '#3B82F6',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
     elevation: 6,
   },
+  logButtonDisabled: {
+    backgroundColor: '#93C5FD',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  logButtonLoading: {
+    backgroundColor: '#60A5FA',
+  },
   logButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  spinner: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    borderTopColor: 'transparent',
+  },
+  // No child hint
+  noChildHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    justifyContent: 'center',
+    marginTop: 16,
+    padding: 12,
+  },
+  noChildText: {
+    fontSize: 13,
+    color: '#3B82F6',
+    fontWeight: '500',
+  },
+  // Success
+  successContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 24,
+  },
+  successCheck: {
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 8,
+  },
+  successSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
   },
 });
