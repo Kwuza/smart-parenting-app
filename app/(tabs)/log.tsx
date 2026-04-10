@@ -1,10 +1,10 @@
 import { useState, useRef } from 'react';
-import { View, ScrollView, StyleSheet, Alert, TouchableOpacity, TextInput as RNTextInput } from 'react-native';
+import { View, ScrollView, StyleSheet, Alert, TouchableOpacity, TextInput as RNTextInput, Modal, FlatList } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../stores/auth';
-import { logActivity, ActivityType } from '../../lib/api';
+import { logActivity, ActivityType, Child } from '../../lib/api';
 
 type ActivityTypeExtended = ActivityType | 'nap' | 'physical_activity';
 
@@ -242,7 +242,8 @@ export default function LogActivityScreen() {
   const [activityType, setActivityType] = useState<ActivityTypeExtended>('screen_time');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const { selectedChild } = useApp();
+  const [showChildPicker, setShowChildPicker] = useState(false);
+  const { selectedChild, children, selectChild } = useApp();
   const router = useRouter();
 
   // Duration (shared across screen, sleep, nap, education, physical)
@@ -370,13 +371,73 @@ export default function LogActivityScreen() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Log Activity</Text>
         {selectedChild ? (
-          <View style={styles.headerChild}>
+          <TouchableOpacity
+            style={styles.headerChild}
+            onPress={() => setShowChildPicker(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.headerChildAvatar}>
+              <Text style={styles.headerChildAvatarText}>
+                {selectedChild.name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
             <Text style={styles.headerChildText}>{selectedChild.name}</Text>
-          </View>
+            {children.length > 1 && (
+              <Ionicons name="chevron-down" size={14} color="#3B82F6" />
+            )}
+          </TouchableOpacity>
         ) : (
           <View style={{ width: 40 }} />
         )}
       </View>
+
+      {/* Child Picker Modal */}
+      <Modal visible={showChildPicker} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowChildPicker(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Log for whom?</Text>
+            {children.map((child) => {
+              const isSelected = child.id === selectedChild?.id;
+              return (
+                <TouchableOpacity
+                  key={child.id}
+                  style={[styles.modalItem, isSelected && styles.modalItemActive]}
+                  onPress={() => {
+                    selectChild(child);
+                    setShowChildPicker(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.modalAvatar, isSelected && styles.modalAvatarActive]}>
+                    <Text style={[styles.modalAvatarText, isSelected && styles.modalAvatarTextActive]}>
+                      {child.name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text style={[styles.modalItemText, isSelected && styles.modalItemTextActive]}>
+                    {child.name}
+                  </Text>
+                  {isSelected && <Ionicons name="checkmark-circle" size={20} color="#3B82F6" />}
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              style={styles.modalAddBtn}
+              onPress={() => {
+                setShowChildPicker(false);
+                router.push('/child/new');
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add-circle-outline" size={20} color="#3B82F6" />
+              <Text style={styles.modalAddText}>Add another child</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Type Selector */}
@@ -524,8 +585,48 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '600', color: '#0F172A' },
-  headerChild: { backgroundColor: '#EFF6FF', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  headerChild: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#EFF6FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
+  },
+  headerChildAvatar: {
+    width: 24, height: 24, borderRadius: 12, backgroundColor: '#3B82F6',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerChildAvatarText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
   headerChildText: { fontSize: 12, fontWeight: '600', color: '#3B82F6' },
+  // Modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 32,
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15, shadowRadius: 20, elevation: 10,
+  },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: '#0F172A', marginBottom: 16, textAlign: 'center' },
+  modalItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: 14, borderRadius: 14, backgroundColor: '#F8FAFC',
+    marginBottom: 8, borderWidth: 1.5, borderColor: 'transparent',
+  },
+  modalItemActive: { backgroundColor: '#EFF6FF', borderColor: '#3B82F6' },
+  modalAvatar: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#E2E8F0',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalAvatarActive: { backgroundColor: '#3B82F6' },
+  modalAvatarText: { fontSize: 14, fontWeight: '700', color: '#64748B' },
+  modalAvatarTextActive: { color: '#FFFFFF' },
+  modalItemText: { flex: 1, fontSize: 15, fontWeight: '500', color: '#0F172A' },
+  modalItemTextActive: { fontWeight: '600' },
+  modalAddBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    justifyContent: 'center', padding: 14, borderRadius: 14,
+    borderWidth: 1.5, borderColor: '#DBEAFE', borderStyle: 'dashed',
+    marginTop: 4,
+  },
+  modalAddText: { fontSize: 14, fontWeight: '500', color: '#3B82F6' },
   scrollContent: { padding: 20 },
   sectionLabel: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 12 },
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
