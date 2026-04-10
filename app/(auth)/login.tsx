@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, StyleSheet, Alert, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { TextInput, Button, Text, useTheme } from 'react-native-paper';
+import { TextInput, Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../stores/auth';
@@ -10,21 +10,33 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const { signIn } = useAuth();
   const router = useRouter();
-  const theme = useTheme();
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+    setError('');
+
+    if (!email.trim() || !password) {
+      setError('Please enter your email and password.');
       return;
     }
+
     setLoading(true);
     try {
-      await signIn(email, password);
-      router.replace('/(tabs)');
+      await signIn(email.trim(), password);
+      // Auth guard in _layout.tsx will redirect to /(tabs)
     } catch (err: any) {
-      Alert.alert('Login Failed', err.message || 'Invalid credentials');
+      const msg = err?.message || 'Login failed';
+      if (msg.includes('Invalid login credentials') || msg.includes('invalid')) {
+        setError('Invalid email or password. Please try again.');
+      } else if (msg.includes('Email not confirmed') || msg.includes('not confirmed')) {
+        setError('Please confirm your email before signing in.');
+      } else if (msg.includes('network') || msg.includes('fetch')) {
+        setError('Network error — check your connection.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -49,7 +61,6 @@ export default function LoginScreen() {
             <Text style={styles.brandName}>NestNote</Text>
           </View>
 
-          {/* Heading */}
           <Text style={styles.heading}>
             Welcome back,{' '}
             <Text style={styles.headingAccent}>parent!</Text>
@@ -61,6 +72,17 @@ export default function LoginScreen() {
 
         {/* Form Card */}
         <View style={styles.formCard}>
+          {/* Error banner */}
+          {error ? (
+            <View style={styles.errorBanner}>
+              <Ionicons name="alert-circle" size={16} color="#EF4444" />
+              <Text style={styles.errorBannerText}>{error}</Text>
+              <TouchableOpacity onPress={() => setError('')}>
+                <Ionicons name="close" size={16} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           {/* Email */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Email address</Text>
@@ -68,7 +90,7 @@ export default function LoginScreen() {
               <Ionicons name="mail-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
               <TextInput
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(t) => { setEmail(t); setError(''); }}
                 placeholder="you@example.com"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -94,7 +116,7 @@ export default function LoginScreen() {
               <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
               <TextInput
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(t) => { setPassword(t); setError(''); }}
                 placeholder="••••••••"
                 secureTextEntry={!showPassword}
                 autoComplete="password"
@@ -124,10 +146,15 @@ export default function LoginScreen() {
             activeOpacity={0.85}
             style={styles.loginButtonWrapper}
           >
-            <View style={styles.loginButton}>
-              <Text style={styles.loginButtonText}>
-                {loading ? 'Signing in…' : 'Login'}
-              </Text>
+            <View style={[styles.loginButton, loading && styles.loginButtonLoading]}>
+              {loading ? (
+                <View style={styles.loadingRow}>
+                  <View style={styles.spinner} />
+                  <Text style={styles.loginButtonText}>Signing in…</Text>
+                </View>
+              ) : (
+                <Text style={styles.loginButtonText}>Login</Text>
+              )}
             </View>
           </TouchableOpacity>
 
@@ -233,6 +260,23 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#EF4444',
+    fontWeight: '500',
+  },
   fieldGroup: {
     marginBottom: 16,
   },
@@ -295,6 +339,22 @@ const styles = StyleSheet.create({
     height: 52,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  loginButtonLoading: {
+    backgroundColor: '#93C5FD',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  spinner: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    borderTopColor: 'transparent',
   },
   loginButtonText: {
     color: '#FFFFFF',

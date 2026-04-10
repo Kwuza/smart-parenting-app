@@ -5,6 +5,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../stores/auth';
 
+type FieldError = { field: string; message: string };
+
 export default function SignupScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -13,40 +15,89 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<FieldError[]>([]);
+  const [success, setSuccess] = useState(false);
   const { signUp } = useAuth();
   const router = useRouter();
 
+  const getError = (field: string) => errors.find((e) => e.field === field)?.message;
+
+  const validate = (): boolean => {
+    const newErrors: FieldError[] = [];
+
+    if (!name.trim()) {
+      newErrors.push({ field: 'name', message: 'Name is required' });
+    }
+
+    if (!email.trim()) {
+      newErrors.push({ field: 'email', message: 'Email is required' });
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      newErrors.push({ field: 'email', message: 'Enter a valid email address' });
+    }
+
+    if (!password) {
+      newErrors.push({ field: 'password', message: 'Password is required' });
+    } else if (password.length < 6) {
+      newErrors.push({ field: 'password', message: 'Must be at least 6 characters' });
+    }
+
+    if (!confirmPassword) {
+      newErrors.push({ field: 'confirm', message: 'Please confirm your password' });
+    } else if (password !== confirmPassword) {
+      newErrors.push({ field: 'confirm', message: 'Passwords do not match' });
+    }
+
+    setErrors(newErrors);
+    return newErrors.length === 0;
+  };
+
   const handleSignup = async () => {
-    if (!name || !email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-    if (password.length < 6) {
-      Alert.alert('Weak Password', 'Password must be at least 6 characters.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return;
-    }
+    if (!validate()) return;
+
     setLoading(true);
+    setErrors([]);
+
     try {
-      await signUp(email, password, name);
-      // After signup, check if email confirmation is needed
-      // If signUp didn't throw, the user was created
-      // Show a message about email confirmation
-      Alert.alert(
-        'Account Created',
-        'You can now sign in with your credentials.',
-        [{ text: 'OK', onPress: () => router.replace('/(auth)/login') }]
-      );
+      await signUp(email.trim(), password, name.trim());
+      setSuccess(true);
+      // Show success state briefly, then redirect to login
+      setTimeout(() => {
+        setSuccess(false);
+        router.replace('/(auth)/login');
+      }, 2500);
     } catch (err: any) {
-      Alert.alert('Signup Failed', err.message);
+      const msg = err?.message || 'Something went wrong';
+      // Categorize Supabase errors
+      if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('User already registered')) {
+        setErrors([{ field: 'email', message: 'This email is already registered' }]);
+      } else if (msg.includes('Password') || msg.includes('password')) {
+        setErrors([{ field: 'password', message: msg }]);
+      } else if (msg.includes('network') || msg.includes('fetch') || msg.includes('timeout')) {
+        setErrors([{ field: 'form', message: 'Network error — check your connection' }]);
+      } else {
+        setErrors([{ field: 'form', message: msg }]);
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // Success state
+  if (success) {
+    return (
+      <View style={styles.successContainer}>
+        <View style={styles.successIcon}>
+          <Ionicons name="checkmark-circle" size={64} color="#10B981" />
+        </View>
+        <Text style={styles.successTitle}>Account Created</Text>
+        <Text style={styles.successSubtitle}>
+          You can now sign in with your credentials.
+        </Text>
+      </View>
+    );
+  }
+
+  const formError = getError('form');
   const passwordsMatch = confirmPassword.length === 0 || password === confirmPassword;
 
   return (
@@ -68,7 +119,6 @@ export default function SignupScreen() {
             <Text style={styles.brandName}>NestNote</Text>
           </View>
 
-          {/* Heading */}
           <Text style={styles.heading}>
             Start your{' '}
             <Text style={styles.headingAccent}>journey</Text>
@@ -80,14 +130,22 @@ export default function SignupScreen() {
 
         {/* Form Card */}
         <View style={styles.formCard}>
+          {/* Form-level error */}
+          {formError && (
+            <View style={styles.formError}>
+              <Ionicons name="alert-circle" size={16} color="#EF4444" />
+              <Text style={styles.formErrorText}>{formError}</Text>
+            </View>
+          )}
+
           {/* Full Name */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Full Name</Text>
-            <View style={styles.inputWrapper}>
+            <View style={[styles.inputWrapper, getError('name') && styles.inputError]}>
               <Ionicons name="person-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
               <TextInput
                 value={name}
-                onChangeText={setName}
+                onChangeText={(t) => { setName(t); setErrors((prev) => prev.filter((e) => e.field !== 'name')); }}
                 placeholder="Sarah Johnson"
                 autoCapitalize="words"
                 style={styles.input}
@@ -97,16 +155,17 @@ export default function SignupScreen() {
                 contentStyle={styles.inputContent}
               />
             </View>
+            {getError('name') && <Text style={styles.fieldError}>{getError('name')}</Text>}
           </View>
 
           {/* Email */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Email address</Text>
-            <View style={styles.inputWrapper}>
+            <View style={[styles.inputWrapper, getError('email') && styles.inputError]}>
               <Ionicons name="mail-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
               <TextInput
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(t) => { setEmail(t); setErrors((prev) => prev.filter((e) => e.field !== 'email')); }}
                 placeholder="you@example.com"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -117,17 +176,21 @@ export default function SignupScreen() {
                 placeholderTextColor="#94A3B8"
                 contentStyle={styles.inputContent}
               />
+              {email.length > 0 && !getError('email') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && (
+                <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              )}
             </View>
+            {getError('email') && <Text style={styles.fieldError}>{getError('email')}</Text>}
           </View>
 
           {/* Password */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Password</Text>
-            <View style={styles.inputWrapper}>
+            <View style={[styles.inputWrapper, getError('password') && styles.inputError]}>
               <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
               <TextInput
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(t) => { setPassword(t); setErrors((prev) => prev.filter((e) => e.field !== 'password')); }}
                 placeholder="••••••••"
                 secureTextEntry={!showPassword}
                 autoComplete="new-password"
@@ -148,16 +211,27 @@ export default function SignupScreen() {
                 />
               </TouchableOpacity>
             </View>
+            {getError('password') && <Text style={styles.fieldError}>{getError('password')}</Text>}
+            {password.length > 0 && !getError('password') && (
+              <View style={styles.strengthRow}>
+                <View style={[styles.strengthBar, password.length >= 6 && styles.strengthGood]} />
+                <View style={[styles.strengthBar, password.length >= 8 && styles.strengthGood]} />
+                <View style={[styles.strengthBar, password.length >= 10 && styles.strengthGood]} />
+                <Text style={styles.strengthText}>
+                  {password.length < 6 ? 'Too short' : password.length < 8 ? 'Fair' : password.length < 10 ? 'Good' : 'Strong'}
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Confirm Password */}
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Confirm Password</Text>
-            <View style={[styles.inputWrapper, !passwordsMatch && styles.inputError]}>
+            <View style={[styles.inputWrapper, (getError('confirm') || !passwordsMatch) && styles.inputError]}>
               <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
               <TextInput
                 value={confirmPassword}
-                onChangeText={setConfirmPassword}
+                onChangeText={(t) => { setConfirmPassword(t); setErrors((prev) => prev.filter((e) => e.field !== 'confirm')); }}
                 placeholder="••••••••"
                 secureTextEntry={!showConfirm}
                 autoComplete="new-password"
@@ -178,22 +252,35 @@ export default function SignupScreen() {
                 />
               </TouchableOpacity>
             </View>
-            {!passwordsMatch && (
-              <Text style={styles.errorText}>Passwords do not match</Text>
+            {(getError('confirm') || !passwordsMatch) && (
+              <Text style={styles.fieldError}>
+                {getError('confirm') || (!passwordsMatch ? 'Passwords do not match' : '')}
+              </Text>
+            )}
+            {confirmPassword.length > 0 && passwordsMatch && (
+              <View style={styles.matchRow}>
+                <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                <Text style={styles.matchText}>Passwords match</Text>
+              </View>
             )}
           </View>
 
           {/* Signup Button */}
           <TouchableOpacity
             onPress={handleSignup}
-            disabled={loading || !name || !email || !password || !confirmPassword || !passwordsMatch}
+            disabled={loading}
             activeOpacity={0.85}
             style={styles.loginButtonWrapper}
           >
-            <View style={styles.loginButton}>
-              <Text style={styles.loginButtonText}>
-                {loading ? 'Creating account…' : 'Sign Up'}
-              </Text>
+            <View style={[styles.loginButton, loading && styles.loginButtonLoading]}>
+              {loading ? (
+                <View style={styles.loadingRow}>
+                  <View style={styles.spinner} />
+                  <Text style={styles.loginButtonText}>Creating account…</Text>
+                </View>
+              ) : (
+                <Text style={styles.loginButtonText}>Sign Up</Text>
+              )}
             </View>
           </TouchableOpacity>
 
@@ -299,6 +386,23 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  formError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  formErrorText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#EF4444',
+    fontWeight: '500',
+  },
   fieldGroup: {
     marginBottom: 16,
   },
@@ -339,10 +443,42 @@ const styles = StyleSheet.create({
     padding: 4,
     marginLeft: 4,
   },
-  errorText: {
+  fieldError: {
     fontSize: 12,
     color: '#EF4444',
     marginTop: 6,
+    marginLeft: 4,
+  },
+  strengthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+  },
+  strengthBar: {
+    flex: 1,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E2E8F0',
+  },
+  strengthGood: {
+    backgroundColor: '#10B981',
+  },
+  strengthText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginLeft: 4,
+  },
+  matchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  matchText: {
+    fontSize: 12,
+    color: '#10B981',
+    fontWeight: '500',
   },
   loginButtonWrapper: {
     marginTop: 8,
@@ -359,6 +495,22 @@ const styles = StyleSheet.create({
     height: 52,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  loginButtonLoading: {
+    backgroundColor: '#93C5FD',
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  spinner: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    borderTopColor: 'transparent',
   },
   loginButtonText: {
     color: '#FFFFFF',
@@ -415,5 +567,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#3B82F6',
+  },
+  // Success state
+  successContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 24,
+  },
+  successIcon: {
+    marginBottom: 20,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 8,
+  },
+  successSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
   },
 });
