@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { View, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
-import { Text, useTheme } from 'react-native-paper';
+import { Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../stores/auth';
-import { getActivitySummary } from '../../lib/api';
 
 type TrendDir = 'up' | 'down' | 'neutral';
 
@@ -25,43 +24,19 @@ function StatCard({ icon, label, value, subValue, trend, trendValue, color, bgCo
   const trendColor = trend === 'up' ? '#10B981' : trend === 'down' ? '#EF4444' : '#94A3B8';
 
   return (
-    <View style={[styles.statCard, { borderColor: '#E2E8F0' }]}>
+    <View style={styles.statCard}>
       <View style={[styles.statIconContainer, { backgroundColor: bgColor }]}>
         <Ionicons name={icon} size={20} color={color} />
       </View>
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statSub}>{subValue}</Text>
-      <View style={styles.trendRow}>
-        <Ionicons name={TrendIcon} size={14} color={trendColor} />
-        <Text style={[styles.trendText, { color: trendColor }]}>{trendValue}</Text>
-      </View>
-    </View>
-  );
-}
-
-function RecentActivityItem({
-  time,
-  activity,
-  iconBg,
-  iconColor,
-  iconLetter,
-}: {
-  time: string;
-  activity: string;
-  iconBg: string;
-  iconColor: string;
-  iconLetter: string;
-}) {
-  return (
-    <View style={styles.activityItem}>
-      <View style={[styles.activityIcon, { backgroundColor: iconBg }]}>
-        <Text style={[styles.activityIconLetter, { color: iconColor }]}>{iconLetter}</Text>
-      </View>
-      <View style={styles.activityContent}>
-        <Text style={styles.activityText}>{activity}</Text>
-        <Text style={styles.activityTime}>{time}</Text>
-      </View>
+      {trendValue ? (
+        <View style={styles.trendRow}>
+          <Ionicons name={TrendIcon} size={14} color={trendColor} />
+          <Text style={[styles.trendText, { color: trendColor }]}>{trendValue}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -82,68 +57,54 @@ export default function DashboardScreen() {
     );
   }, []);
 
-  if (!selectedChild) {
-    return (
-      <View style={styles.empty}>
-        <Ionicons name="child-outline" size={48} color="#94A3B8" />
-        <Text style={styles.emptyTitle}>No children added yet</Text>
-        <TouchableOpacity
-          style={styles.emptyButton}
-          onPress={() => router.push('/child/new')}
-        >
-          <Text style={styles.emptyButtonText}>Add Child Profile</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const hasChild = !!selectedChild;
+  const childName = selectedChild?.name || 'Your Child';
 
-  // Calculate age from DOB
-  const age = selectedChild.date_of_birth
+  const age = selectedChild?.date_of_birth
     ? Math.floor(
         (Date.now() - new Date(selectedChild.date_of_birth).getTime()) /
           (365.25 * 24 * 60 * 60 * 1000)
       )
     : null;
 
-  // Sample data (would come from getActivitySummary in production)
   const stats: StatData[] = [
     {
       icon: 'phone-portrait-outline',
       label: 'Screen Time',
-      value: '2h 45m',
+      value: hasChild ? '--' : '--',
       subValue: 'Today',
-      trend: 'down',
-      trendValue: '15% less than yesterday',
+      trend: 'neutral',
+      trendValue: '',
       color: '#3B82F6',
       bgColor: '#EFF6FF',
     },
     {
       icon: 'moon-outline',
       label: 'Sleep',
-      value: '9h',
+      value: hasChild ? '--' : '--',
       subValue: 'Last night',
-      trend: 'up',
-      trendValue: '1h more than avg',
+      trend: 'neutral',
+      trendValue: '',
       color: '#10B981',
       bgColor: '#ECFDF5',
     },
     {
       icon: 'restaurant-outline',
       label: 'Meals',
-      value: '2/3',
+      value: hasChild ? '--/--' : '--/--',
       subValue: 'Tracked today',
       trend: 'neutral',
-      trendValue: 'On track',
+      trendValue: '',
       color: '#F59E0B',
       bgColor: '#FFFBEB',
     },
     {
       icon: 'school-outline',
       label: 'Education',
-      value: '45m',
+      value: hasChild ? '--' : '--',
       subValue: 'Learning time',
-      trend: 'up',
-      trendValue: '20% more this week',
+      trend: 'neutral',
+      trendValue: '',
       color: '#8B5CF6',
       bgColor: '#F5F3FF',
     },
@@ -160,22 +121,36 @@ export default function DashboardScreen() {
           <View style={styles.headerLeft}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
-                {selectedChild.name.charAt(0).toUpperCase()}
+                {hasChild ? childName.charAt(0).toUpperCase() : '?'}
               </Text>
             </View>
             <View>
-              <TouchableOpacity style={styles.nameRow}>
-                <Text style={styles.childName}>{selectedChild.name}</Text>
-                <Ionicons name="chevron-down" size={16} color="#94A3B8" />
+              <TouchableOpacity
+                style={styles.nameRow}
+                onPress={() => {
+                  if (!hasChild) router.push('/child/new');
+                }}
+              >
+                <Text style={styles.childName}>
+                  {hasChild ? childName : 'Add a child'}
+                </Text>
+                <Ionicons
+                  name={hasChild ? 'chevron-down' : 'add-circle-outline'}
+                  size={16}
+                  color="#94A3B8"
+                />
               </TouchableOpacity>
               <Text style={styles.childAge}>
-                {age !== null ? `${age} years old` : 'Age not set'}
+                {hasChild && age !== null
+                  ? `${age} years old`
+                  : hasChild
+                    ? 'Age not set'
+                    : 'Tap to create a profile'}
               </Text>
             </View>
           </View>
           <TouchableOpacity style={styles.notifButton}>
             <Ionicons name="notifications-outline" size={22} color="#0F172A" />
-            <View style={styles.notifDot} />
           </TouchableOpacity>
         </View>
 
@@ -190,14 +165,20 @@ export default function DashboardScreen() {
         </View>
 
         {/* AI Recommendations Banner */}
-        <TouchableOpacity style={styles.aiBanner} activeOpacity={0.9}>
+        <TouchableOpacity
+          style={styles.aiBanner}
+          activeOpacity={0.9}
+          onPress={() => router.push('/ai')}
+        >
           <View style={styles.aiBannerIcon}>
             <Ionicons name="sparkles" size={20} color="#FFFFFF" />
           </View>
           <View style={styles.aiBannerContent}>
             <Text style={styles.aiBannerTitle}>AI Recommendations</Text>
             <Text style={styles.aiBannerText} numberOfLines={2}>
-              Based on {selectedChild.name}'s sleep patterns, consider an earlier bedtime tonight for better rest.
+              {hasChild
+                ? `Log activities for ${childName} to get personalized insights.`
+                : 'Add a child profile and log activities to unlock AI insights.'}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.7)" />
@@ -206,28 +187,21 @@ export default function DashboardScreen() {
         {/* Recent Activity */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
-          <View style={styles.activityList}>
-            <RecentActivityItem
-              time="3:30 PM"
-              activity="Completed math lesson"
-              iconBg="#F5F3FF"
-              iconColor="#8B5CF6"
-              iconLetter="E"
-            />
-            <RecentActivityItem
-              time="2:00 PM"
-              activity="Lunch tracked"
-              iconBg="#FFFBEB"
-              iconColor="#F59E0B"
-              iconLetter="M"
-            />
-            <RecentActivityItem
-              time="12:15 PM"
-              activity="30 min educational video"
-              iconBg="#EFF6FF"
-              iconColor="#3B82F6"
-              iconLetter="S"
-            />
+          <View style={styles.emptyActivity}>
+            <Ionicons name="time-outline" size={28} color="#CBD5E1" />
+            <Text style={styles.emptyActivityText}>
+              {hasChild
+                ? 'No activities logged yet'
+                : 'Activities will appear here'}
+            </Text>
+            {hasChild && (
+              <TouchableOpacity
+                style={styles.emptyActivityBtn}
+                onPress={() => router.push('/log')}
+              >
+                <Text style={styles.emptyActivityBtnText}>Log Activity</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </ScrollView>
@@ -242,30 +216,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 100,
-  },
-  empty: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-    gap: 12,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#0F172A',
-  },
-  emptyButton: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 16,
-    marginTop: 8,
-  },
-  emptyButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 14,
   },
   header: {
     flexDirection: 'row',
@@ -318,18 +268,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
-  },
-  notifDot: {
-    position: 'absolute',
-    right: 10,
-    top: 10,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#EF4444',
-    borderWidth: 2,
-    borderColor: '#F1F5F9',
   },
   date: {
     fontSize: 13,
@@ -353,6 +291,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
+    borderColor: '#E2E8F0',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
@@ -443,46 +382,31 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     marginBottom: 12,
   },
-  activityList: {
-    gap: 8,
-  },
-  activityItem: {
-    flexDirection: 'row',
+  emptyActivity: {
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 12,
     borderWidth: 1,
+    borderStyle: 'dashed',
     borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
-    elevation: 1,
+    padding: 28,
   },
-  activityIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activityIconLetter: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  activityContent: {
-    flex: 1,
-  },
-  activityText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#0F172A',
-  },
-  activityTime: {
-    fontSize: 11,
+  emptyActivityText: {
+    fontSize: 14,
     color: '#94A3B8',
-    marginTop: 2,
+    fontWeight: '500',
+  },
+  emptyActivityBtn: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginTop: 4,
+  },
+  emptyActivityBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#3B82F6',
   },
 });
