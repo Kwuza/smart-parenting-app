@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, StyleSheet, Alert, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { useState, useRef } from 'react';
+import { View, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Animated } from 'react-native';
 import { TextInput, Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,9 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showWelcome, setShowWelcome] = useState(false);
+  const welcomeOpacity = useRef(new Animated.Value(0)).current;
+  const welcomeScale = useRef(new Animated.Value(0.8)).current;
   const { signIn } = useAuth();
   const router = useRouter();
 
@@ -25,7 +28,20 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signIn(email.trim(), password);
-      // Auth guard in _layout.tsx will redirect to /(tabs)
+      setShowWelcome(true);
+      Animated.parallel([
+        Animated.timing(welcomeOpacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.spring(welcomeScale, {
+          toValue: 1,
+          friction: 6,
+          useNativeDriver: true,
+        }),
+      ]).start();
+      // Auth guard in _layout.tsx will redirect after delay
     } catch (err: any) {
       const msg = err?.message || 'Login failed';
       if (msg.includes('Invalid login credentials') || msg.includes('invalid')) {
@@ -186,6 +202,17 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Welcome Animation Overlay */}
+      {showWelcome && (
+        <Animated.View style={[styles.welcomeOverlay, { opacity: welcomeOpacity }]}>
+          <Animated.View style={[styles.welcomeContent, { transform: [{ scale: welcomeScale }] }]}>
+            <Ionicons name="happy" size={56} color="#3B82F6" style={{ marginBottom: 16 }} />
+            <Text style={styles.welcomeTitle}>Welcome back!</Text>
+            <Text style={styles.welcomeSubtitle}>Great to see you again 💙</Text>
+          </Animated.View>
+        </Animated.View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -411,5 +438,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#3B82F6',
+  },
+  // Welcome animation
+  welcomeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  welcomeContent: {
+    alignItems: 'center',
+  },
+  welcomeTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 8,
+  },
+  welcomeSubtitle: {
+    fontSize: 16,
+    color: '#64748B',
   },
 });

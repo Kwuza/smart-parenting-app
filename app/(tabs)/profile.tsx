@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Switch, Alert } from 'react-native';
+import { useState, useRef, useEffect } from 'react';
+import { View, ScrollView, StyleSheet, TouchableOpacity, Switch, Modal, Animated } from 'react-native';
 import { Text, TextInput } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -83,6 +83,10 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [notifEnabled, setNotifEnabled] = useState(true);
   const [weeklyReport, setWeeklyReport] = useState(true);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [showGoodbye, setShowGoodbye] = useState(false);
+  const goodbyeOpacity = useRef(new Animated.Value(0)).current;
+  const goodbyeScale = useRef(new Animated.Value(0.8)).current;
 
   const userName = user?.user_metadata?.name || 'Parent';
   const userEmail = user?.email || '';
@@ -95,18 +99,30 @@ export default function ProfileScreen() {
 
   const childColors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899'];
 
-  const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await signOut();
-          router.replace('/(auth)/login');
-        },
-      },
-    ]);
+  const handleSignOut = async () => {
+    setShowSignOutConfirm(false);
+    setShowGoodbye(true);
+
+    Animated.parallel([
+      Animated.timing(goodbyeOpacity, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }),
+      Animated.spring(goodbyeScale, {
+        toValue: 1,
+        friction: 6,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    setTimeout(async () => {
+      await signOut();
+      goodbyeOpacity.setValue(0);
+      goodbyeScale.setValue(0.8);
+      setShowGoodbye(false);
+      router.replace('/(auth)/login');
+    }, 2000);
   };
 
   return (
@@ -248,7 +264,7 @@ export default function ProfileScreen() {
         </Section>
 
         {/* Sign Out */}
-        <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} activeOpacity={0.7}>
+        <TouchableOpacity style={styles.signOutBtn} onPress={() => setShowSignOutConfirm(true)} activeOpacity={0.7}>
           <Ionicons name="log-out-outline" size={18} color="#EF4444" />
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
@@ -258,6 +274,38 @@ export default function ProfileScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Sign Out Confirmation Modal */}
+      <Modal visible={showSignOutConfirm} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowSignOutConfirm(false)}>
+          <View style={styles.confirmModal}>
+            <View style={styles.confirmIcon}>
+              <Ionicons name="log-out-outline" size={28} color="#EF4444" />
+            </View>
+            <Text style={styles.confirmTitle}>Sign Out</Text>
+            <Text style={styles.confirmText}>Are you sure you want to sign out of your account?</Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity style={styles.confirmCancel} onPress={() => setShowSignOutConfirm(false)} activeOpacity={0.7}>
+                <Text style={styles.confirmCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmSignOut} onPress={handleSignOut} activeOpacity={0.7}>
+                <Text style={styles.confirmSignOutText}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Goodbye Animation Overlay */}
+      {showGoodbye && (
+        <Animated.View style={[styles.goodbyeOverlay, { opacity: goodbyeOpacity }]}>
+          <Animated.View style={[styles.goodbyeContent, { transform: [{ scale: goodbyeScale }] }]}>
+            <Ionicons name="heart" size={48} color="#3B82F6" style={{ marginBottom: 16 }} />
+            <Text style={styles.goodbyeTitle}>See you soon!</Text>
+            <Text style={styles.goodbyeSubtitle}>Take care of your little ones 💙</Text>
+          </Animated.View>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -381,5 +429,98 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#CBD5E1',
     marginTop: 16,
+  },
+  // Modals
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  confirmModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 28,
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  confirmIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  confirmTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 8,
+  },
+  confirmText: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  confirmButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  confirmCancel: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+  },
+  confirmCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  confirmSignOut: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+  },
+  confirmSignOutText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  // Goodbye animation
+  goodbyeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  goodbyeContent: {
+    alignItems: 'center',
+  },
+  goodbyeTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 8,
+  },
+  goodbyeSubtitle: {
+    fontSize: 16,
+    color: '#64748B',
   },
 });
