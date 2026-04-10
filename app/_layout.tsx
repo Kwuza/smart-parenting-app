@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { PaperProvider, MD3LightTheme } from 'react-native-paper';
 import { StatusBar } from 'expo-status-bar';
@@ -37,6 +37,7 @@ export default function RootLayout() {
   const { user, loading, loadSession } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadSession();
@@ -46,15 +47,21 @@ export default function RootLayout() {
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
-    const inTabsGroup = segments[0] === '(tabs)';
 
     if (!user && !inAuthGroup) {
-      // Not logged in and not on auth screens — redirect to login
+      // Not logged in and not on auth screens — redirect immediately
       router.replace('/(auth)/login');
     } else if (user && inAuthGroup) {
-      // Logged in but on auth screens — redirect to dashboard
-      router.replace('/(tabs)');
+      // Logged in but on auth screens — delay to let "Welcome back!" animation play
+      if (redirectTimer.current) clearTimeout(redirectTimer.current);
+      redirectTimer.current = setTimeout(() => {
+        router.replace('/(tabs)');
+      }, 1800);
     }
+
+    return () => {
+      if (redirectTimer.current) clearTimeout(redirectTimer.current);
+    };
   }, [user, loading, segments]);
 
   if (loading) {
