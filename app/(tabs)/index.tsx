@@ -4,6 +4,7 @@ import { Text } from 'react-native-paper';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp, useAuth } from '../../stores/auth';
+import { getTodayActivities, Activity, ActivityType } from '../../lib/api';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -20,6 +21,98 @@ function getDateString(): string {
   });
 }
 
+function formatTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+function getActivityLabel(type: ActivityType, value: Record<string, any>): string {
+  switch (type) {
+    case 'screen_time': {
+      const h = value.hours || 0;
+      const m = value.minutes || 0;
+      const device = value.device || '';
+      return `Screen time — ${h > 0 ? `${h}h ` : ''}${m}m${device ? ` on ${device}` : ''}`;
+    }
+    case 'sleep': {
+      const h = value.hours || 0;
+      const m = value.minutes || 0;
+      const q = value.quality || '';
+      return `Sleep — ${h > 0 ? `${h}h ` : ''}${m}m${q ? ` (${q})` : ''}`;
+    }
+    case 'meal': {
+      const meal = value.meal_type || 'meal';
+      const q = value.quality || '';
+      return `${meal.charAt(0).toUpperCase() + meal.slice(1)}${q ? ` — ${q}` : ''}`;
+    }
+    case 'education': {
+      const h = value.hours || 0;
+      const m = value.minutes || 0;
+      const s = value.subject || '';
+      return `Learning — ${h > 0 ? `${h}h ` : ''}${m}m${s ? ` (${s.replace('_', ' ')})` : ''}`;
+    }
+    default:
+      return type;
+  }
+}
+
+interface Stats {
+  screenTime: string;
+  sleep: string;
+  meals: string;
+  education: string;
+  screenMins: number;
+  sleepMins: number;
+  mealCount: number;
+  eduMins: number;
+}
+
+function calculateStats(activities: Activity[]): Stats {
+  let screenMins = 0;
+  let sleepMins = 0;
+  let mealCount = 0;
+  let eduMins = 0;
+
+  for (const a of activities) {
+    const v = a.value as Record<string, any>;
+    switch (a.type) {
+      case 'screen_time':
+        screenMins += (v.hours || 0) * 60 + (v.minutes || 0);
+        break;
+      case 'sleep':
+        sleepMins += (v.hours || 0) * 60 + (v.minutes || 0);
+        break;
+      case 'meal':
+        mealCount++;
+        break;
+      case 'education':
+        eduMins += (v.hours || 0) * 60 + (v.minutes || 0);
+        break;
+    }
+  }
+
+  const formatMins = (mins: number) => {
+    if (mins === 0) return '--';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  return {
+    screenTime: formatMins(screenMins),
+    sleep: formatMins(sleepMins),
+    meals: mealCount > 0 ? `${mealCount}/3` : '--/--',
+    education: formatMins(eduMins),
+    screenMins,
+    sleepMins,
+    mealCount,
+    eduMins,
+  };
+}
+
 interface StatItem {
   key: string;
   icon: keyof typeof Ionicons.glyphMap;
@@ -28,7 +121,6 @@ interface StatItem {
   subtitle: string;
   color: string;
   bgColor: string;
-  route: string;
 }
 
 function StatCard({ item }: { item: StatItem }) {
@@ -37,15 +129,41 @@ function StatCard({ item }: { item: StatItem }) {
     <TouchableOpacity
       style={styles.statCard}
       activeOpacity={0.7}
-      onPress={() => router.push(item.route as any)}
+      onPress={() => router.push(`/log?type=${item.key === 'screen' ? 'screen_time' : item.key === 'edu' ? 'education' : item.key}`)}
     >
       <View style={[styles.statIcon, { backgroundColor: item.bgColor }]}>
         <Ionicons name={item.icon} size={20} color={item.color} />
       </View>
       <Text style={styles.statLabel}>{item.label}</Text>
-      <Text style={styles.statValue}>{item.value}</Text>
+      <Text style={[styles.statValue, item.value === '--' && styles.statValueEmpty]}>
+        {item.value}
+      </Text>
       <Text style={styles.statSubtitle}>{item.subtitle}</Text>
     </TouchableOpacity>
+  );
+}
+
+function RecentItem({ activity }: { activity: Activity }) {
+  const typeConfig: Record<string, { color: string; bg: string; letter: string }> = {
+    screen_time: { color: '#3B82F6', bg: '#EFF6FF', letter: 'S' },
+    sleep: { color: '#10B981', bg: '#ECFDF5', letter: 'Z' },
+    meal: { color: '#F59E0B', bg: '#FFFBEB', letter: 'M' },
+    education: { color: '#8B5CF6', bg: '#F5F3FF', letter: 'E' },
+  };
+  const config = typeConfig[activity.type] || typeConfig.screen_time;
+
+  return (
+    <View style={styles.recentItem}>
+      <View style={[styles.recentIcon, { backgroundColor: config.bg }]}>
+        <Text style={[styles.recentLetter, { color: config.color }]}>{config.letter}</Text>
+      </View>
+      <View style={styles.recentContent}>
+        <Text style={styles.recentText}>
+          {getActivityLabel(activity.type, activity.value as Record<string, any>)}
+        </Text>
+        <Text style={styles.recentTime}>{formatTime(activity.recorded_at)}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -54,17 +172,36 @@ export default function DashboardScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
+  const [todayActivities, setTodayActivities] = useState<Activity[]>([]);
 
-  // Reload on focus
+  const loadTodayData = async () => {
+    if (selectedChild) {
+      try {
+        const activities = await getTodayActivities(selectedChild.id);
+        setTodayActivities(activities);
+      } catch (err) {
+        console.error('Failed to load activities:', err);
+      }
+    } else {
+      setTodayActivities([]);
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
-      loadChildren();
+      loadChildren().then(() => loadTodayData());
     }, [])
   );
+
+  // Reload activities when selectedChild changes
+  useEffect(() => {
+    loadTodayData();
+  }, [selectedChild?.id]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     await loadChildren();
+    await loadTodayData();
     setRefreshing(false);
   };
 
@@ -78,47 +215,13 @@ export default function DashboardScreen() {
       )
     : null;
 
-  const stats: StatItem[] = [
-    {
-      key: 'screen',
-      icon: 'phone-portrait-outline',
-      label: 'Screen Time',
-      value: '--',
-      subtitle: 'hrs today',
-      color: '#3B82F6',
-      bgColor: '#EFF6FF',
-      route: '/log?type=screen_time',
-    },
-    {
-      key: 'sleep',
-      icon: 'moon-outline',
-      label: 'Sleep',
-      value: '--',
-      subtitle: 'hrs last night',
-      color: '#10B981',
-      bgColor: '#ECFDF5',
-      route: '/log?type=sleep',
-    },
-    {
-      key: 'meals',
-      icon: 'restaurant-outline',
-      label: 'Meals',
-      value: '--/--',
-      subtitle: 'tracked today',
-      color: '#F59E0B',
-      bgColor: '#FFFBEB',
-      route: '/log?type=meal',
-    },
-    {
-      key: 'edu',
-      icon: 'school-outline',
-      label: 'Education',
-      value: '--',
-      subtitle: 'mins today',
-      color: '#8B5CF6',
-      bgColor: '#F5F3FF',
-      route: '/log?type=education',
-    },
+  const stats = calculateStats(todayActivities);
+
+  const statItems: StatItem[] = [
+    { key: 'screen', icon: 'phone-portrait-outline', label: 'Screen Time', value: stats.screenTime, subtitle: 'today', color: '#3B82F6', bgColor: '#EFF6FF' },
+    { key: 'sleep', icon: 'moon-outline', label: 'Sleep', value: stats.sleep, subtitle: 'last night', color: '#10B981', bgColor: '#ECFDF5' },
+    { key: 'meal', icon: 'restaurant-outline', label: 'Meals', value: stats.meals, subtitle: 'tracked today', color: '#F59E0B', bgColor: '#FFFBEB' },
+    { key: 'edu', icon: 'school-outline', label: 'Education', value: stats.education, subtitle: 'today', color: '#8B5CF6', bgColor: '#F5F3FF' },
   ];
 
   return (
@@ -138,12 +241,10 @@ export default function DashboardScreen() {
           </View>
           <TouchableOpacity style={styles.notifButton} activeOpacity={0.7}>
             <Ionicons name="notifications-outline" size={22} color="#0F172A" />
-            {/* Notification dot — show when there are alerts */}
             <View style={styles.notifDot} />
           </TouchableOpacity>
         </View>
 
-        {/* Date */}
         <Text style={styles.date}>{getDateString()}</Text>
 
         {/* Child Selector / Add Child */}
@@ -161,7 +262,7 @@ export default function DashboardScreen() {
             <View style={styles.childInfo}>
               <Text style={styles.childName}>{childName}</Text>
               <Text style={styles.childMeta}>
-                {age !== null ? `${age} years old` : 'Age not set'} · Tracking active
+                {age !== null ? `${age} years old` : 'Age not set'} · {todayActivities.length} activities today
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
@@ -185,7 +286,7 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Quick Log — Big CTA */}
+        {/* Quick Log */}
         <TouchableOpacity
           style={styles.quickLog}
           activeOpacity={0.85}
@@ -208,7 +309,7 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.statsGrid}>
-          {stats.map((s) => (
+          {statItems.map((s) => (
             <StatCard key={s.key} item={s} />
           ))}
         </View>
@@ -216,23 +317,37 @@ export default function DashboardScreen() {
         {/* Recent Activity */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
-          {hasChild && (
+          {hasChild && todayActivities.length > 0 && (
             <TouchableOpacity onPress={() => router.push('/log')}>
               <Text style={styles.sectionLink}>Log New →</Text>
             </TouchableOpacity>
           )}
         </View>
-        <View style={styles.emptyState}>
-          <Ionicons name="time-outline" size={32} color="#CBD5E1" />
-          <Text style={styles.emptyTitle}>
-            {hasChild ? 'No activities yet' : 'Activities appear here'}
-          </Text>
-          <Text style={styles.emptySubtitle}>
-            {hasChild
-              ? 'Tap the + button or "Log an Activity" to get started'
-              : 'Add a child profile first, then start logging'}
-          </Text>
-        </View>
+
+        {todayActivities.length > 0 ? (
+          <View style={styles.recentList}>
+            {todayActivities.slice(0, 5).map((a) => (
+              <RecentItem key={a.id} activity={a} />
+            ))}
+            {todayActivities.length > 5 && (
+              <Text style={styles.moreText}>
+                +{todayActivities.length - 5} more activities
+              </Text>
+            )}
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <Ionicons name="time-outline" size={32} color="#CBD5E1" />
+            <Text style={styles.emptyTitle}>
+              {hasChild ? 'No activities yet' : 'Activities appear here'}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {hasChild
+                ? 'Tap the + button or "Log an Activity" to get started'
+                : 'Add a child profile first, then start logging'}
+            </Text>
+          </View>
+        )}
 
         {/* AI Banner */}
         <TouchableOpacity
@@ -318,7 +433,6 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 16,
   },
-  // Child banner
   childBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -357,7 +471,6 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginTop: 2,
   },
-  // Add child banner
   addChildBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -394,7 +507,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
   },
-  // Quick log
   quickLog: {
     backgroundColor: '#3B82F6',
     marginHorizontal: 20,
@@ -423,7 +535,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginLeft: 34,
   },
-  // Sections
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -441,7 +552,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#3B82F6',
   },
-  // Stats
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -479,12 +589,59 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     marginTop: 2,
   },
+  statValueEmpty: {
+    color: '#CBD5E1',
+  },
   statSubtitle: {
     fontSize: 12,
     color: '#94A3B8',
     marginTop: 2,
   },
-  // Empty state
+  recentList: {
+    paddingHorizontal: 20,
+    gap: 8,
+    marginBottom: 20,
+  },
+  recentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  recentIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recentLetter: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  recentContent: {
+    flex: 1,
+  },
+  recentText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#0F172A',
+  },
+  recentTime: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  moreText: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
   emptyState: {
     alignItems: 'center',
     gap: 8,
@@ -508,7 +665,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
   },
-  // AI banner
   aiBanner: {
     flexDirection: 'row',
     alignItems: 'center',

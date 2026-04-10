@@ -83,6 +83,19 @@ export async function getActivitySummary(childId: string) {
   return data;
 }
 
+export async function getTodayActivities(childId: string) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const { data, error } = await supabase
+    .from('activities')
+    .select('*')
+    .eq('child_id', childId)
+    .gte('recorded_at', today.toISOString())
+    .order('recorded_at', { ascending: false });
+  if (error) throw error;
+  return data as Activity[];
+}
+
 // AI Recommendations
 export async function getRecommendations(childId: string) {
   const { data, error } = await supabase

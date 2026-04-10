@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../stores/auth';
-import { getRecommendations, analyzeChild, Recommendation } from '../../lib/api';
+import { getRecommendations, getActivitySummary, Recommendation } from '../../lib/api';
+import { useFocusEffect } from 'expo-router';
 
 type FilterValue = 'all' | 'sleep' | 'meal' | 'education' | 'screen_time' | 'high' | 'medium' | 'low';
 
@@ -120,30 +121,117 @@ export default function AIScreen() {
   const [lastRun, setLastRun] = useState<Date | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterValue>('all');
 
-  useEffect(() => {
-    if (selectedChild) {
-      setLoading(true);
-      getRecommendations(selectedChild.id)
-        .then((data) => {
-          setRecommendations(data);
-          if (data.length > 0) setLastRun(new Date());
-        })
-        .catch(console.error)
-        .finally(() => setLoading(false));
-    }
-  }, [selectedChild]);
+  // Load saved recommendations on focus
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedChild) {
+        setLoading(true);
+        getRecommendations(selectedChild.id)
+          .then((data) => {
+            setRecommendations(data);
+            if (data.length > 0) setLastRun(new Date());
+          })
+          .catch(console.error)
+          .finally(() => setLoading(false));
+      }
+    }, [selectedChild?.id])
+  );
 
+  // Generate local recommendations from activity data
   const handleAnalyze = async () => {
     if (!selectedChild) return;
     setAnalyzing(true);
     try {
-      const result = await analyzeChild(selectedChild.id);
-      if (result.recommendations) {
-        setRecommendations(result.recommendations);
+      const activities = await getActivitySummary(selectedChild.id);
+      const localRecs: Recommendation[] = [];
+
+      // Analyze screen time
+      const screenActivities = activities.filter((a: any) => a.type === 'screen_time');
+      const totalScreenMins = screenActivities.reduce((sum: number, a: any) => {
+        const v = a.value as Record<string, any>;
+        return sum + (v.hours || 0) * 60 + (v.minutes || 0);
+      }, 0);
+      const avgScreenMins = screenActivities.length > 0 ? totalScreenMins / 7 : 0;
+
+      if (avgScreenMins > 120) {
+        localRecs.push({
+          id: 'local-screen-1',
+          child_id: selectedChild.id,
+          content: `Average screen time is ${Math.round(avgScreenMins / 60 * 10) / 10}h/day this week. Consider setting daily limits to 2 hours for healthier habits.`,
+          category: 'screen_time',
+          priority: avgScreenMins > 180 ? 'high' : 'medium',
+          created_at: new Date().toISOString(),
+        });
       }
+
+      // Analyze sleep
+      const sleepActivities = activities.filter((a: any) => a.type === 'sleep');
+      const totalSleepMins = sleepActivities.reduce((sum: number, a: any) => {
+        const v = a.value as Record<string, any>;
+        return sum + (v.hours || 0) * 60 + (v.minutes || 0);
+      }, 0);
+      const avgSleepHrs = sleepActivities.length > 0 ? totalSleepMins / sleepActivities.length / 60 : 0;
+
+      if (avgSleepHrs > 0 && avgSleepHrs < 9) {
+        localRecs.push({
+          id: 'local-sleep-1',
+          child_id: selectedChild.id,
+          content: `Average sleep is ${Math.round(avgSleepHrs * 10) / 10}h/night. Children aged 6-12 need 9-12 hours. Consider an earlier bedtime.`,
+          category: 'sleep',
+          priority: avgSleepHrs < 7 ? 'high' : 'medium',
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      // Analyze meals
+      const mealActivities = activities.filter((a: any) => a.type === 'meal');
+      if (mealActivities.length < 7) {
+        localRecs.push({
+          id: 'local-meal-1',
+          child_id: selectedChild.id,
+          content: `Only ${mealActivities.length} meals logged this week. Consistent meal tracking helps identify nutritional gaps.`,
+          category: 'meal',
+          priority: 'low',
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      // Analyze education
+      const eduActivities = activities.filter((a: any) => a.type === 'education');
+      const totalEduMins = eduActivities.reduce((sum: number, a: any) => {
+        const v = a.value as Record<string, any>;
+        return sum + (v.hours || 0) * 60 + (v.minutes || 0);
+      }, 0);
+
+      if (totalEduMins < 30) {
+        localRecs.push({
+          id: 'local-edu-1',
+          child_id: selectedChild.id,
+          content: `Learning time is low this week (${totalEduMins} mins total). Try reading together for 15-20 minutes daily.`,
+          category: 'education',
+          priority: 'medium',
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      // Default if no specific insights
+      if (localRecs.length === 0) {
+        localRecs.push({
+          id: 'local-default-1',
+          child_id: selectedChild.id,
+          content: activities.length === 0
+            ? 'Start logging daily activities to get personalized insights about screen time, sleep, meals, and learning habits.'
+            : 'Looking good! Keep logging activities consistently for more detailed insights.',
+          category: 'general',
+          priority: 'low',
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      setRecommendations(localRecs);
       setLastRun(new Date());
     } catch (err) {
-      console.error(err);
+      console.error('Analysis failed:', err);
     } finally {
       setAnalyzing(false);
     }
