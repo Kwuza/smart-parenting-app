@@ -40,9 +40,11 @@ export async function getChildren() {
 }
 
 export async function createChild(name: string, dateOfBirth: string) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
   const { data, error } = await supabase
     .from('children')
-    .insert({ name, date_of_birth: dateOfBirth })
+    .insert({ name, date_of_birth: dateOfBirth, parent_id: user.id })
     .select()
     .single();
   if (error) throw error;
