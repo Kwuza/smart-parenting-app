@@ -245,20 +245,6 @@ export default function ProfileScreen() {
             label="Help & FAQ"
             description="Common questions answered"
           />
-          <Item
-            icon="chatbubble-outline"
-            iconBg="#F5F3FF"
-            iconColor="#8B5CF6"
-            label="Contact Support"
-            description="Get help from our team"
-          />
-          <Item
-            icon="star-outline"
-            iconBg="#FFFBEB"
-            iconColor="#F59E0B"
-            label="Rate NestNote"
-            description="Share feedback on the App Store"
-          />
         </Section>
 
         {/* Sign Out */}
