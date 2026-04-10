@@ -114,15 +114,21 @@ export default function ProfileScreen() {
         friction: 6,
         useNativeDriver: true,
       }),
-    ]).start();
-
-    setTimeout(async () => {
-      await signOut();
-      goodbyeOpacity.setValue(0);
-      goodbyeScale.setValue(0.8);
-      setShowGoodbye(false);
-      router.replace('/(auth)/login');
-    }, 2000);
+    ]).start(() => {
+      // After showing, fade out then sign out
+      setTimeout(() => {
+        Animated.timing(goodbyeOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(async () => {
+          await signOut();
+          goodbyeScale.setValue(0.8);
+          setShowGoodbye(false);
+          router.replace('/(auth)/login');
+        });
+      }, 1200);
+    });
   };
 
   return (

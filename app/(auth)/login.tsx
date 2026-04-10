@@ -40,7 +40,16 @@ export default function LoginScreen() {
           friction: 6,
           useNativeDriver: true,
         }),
-      ]).start();
+      ]).start(() => {
+        // After showing, fade out
+        setTimeout(() => {
+          Animated.timing(welcomeOpacity, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }).start();
+        }, 1200);
+      });
       // Auth guard in _layout.tsx will redirect after delay
     } catch (err: any) {
       const msg = err?.message || 'Login failed';
