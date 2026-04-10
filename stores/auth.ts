@@ -62,6 +62,9 @@ export const useApp = create<AppState>((set) => ({
   selectChild: (child) => set({ selectedChild: child }),
   loadChildren: async () => {
     const children = await getChildren();
-    set({ children, selectedChild: children[0] ?? null });
+    const current = useApp.getState().selectedChild;
+    // Keep current selection if it still exists, otherwise pick first
+    const selected = children.find((c) => c.id === current?.id) ?? children[0] ?? null;
+    set({ children, selectedChild: selected });
   },
 }));
