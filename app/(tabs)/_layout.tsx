@@ -1,13 +1,12 @@
 import { Tabs } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 
-export default function TabLayout() {
+export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: '#2563EB',
         tabBarInactiveTintColor: '#9CA3AF',
-        tabBarStyle: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
         headerStyle: { backgroundColor: '#2563EB' },
         headerTintColor: '#fff',
       }}
@@ -16,28 +15,28 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="dashboard" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="log"
         options={{
-          title: 'Log Activity',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="add-circle" size={size} color={color} />,
+          title: 'Log',
+          tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="ai"
         options={{
-          title: 'AI Insights',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="psychology" size={size} color={color} />,
+          title: 'AI',
+          tabBarIcon: ({ color, size }) => <Ionicons name="bulb" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, size }) => <MaterialIcons name="person" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
         }}
       />
     </Tabs>

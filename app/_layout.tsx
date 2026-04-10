@@ -23,9 +23,7 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="child/[id]" />
-        <Stack.Screen name="log-activity" />
-        <Stack.Screen name="ai-analysis" />
+        <Stack.Screen name="child/new" options={{ title: 'Add Child' }} />
       </Stack>
     </PaperProvider>
   );

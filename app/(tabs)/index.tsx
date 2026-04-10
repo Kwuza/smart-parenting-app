@@ -88,7 +88,7 @@ export default function DashboardScreen() {
           </Text>
         </Card.Content>
         <Card.Actions>
-          <Button onPress={() => router.push('/ai-analysis')}>View AI Insights</Button>
+          <Button onPress={() => router.push('/ai')}>View AI Insights</Button>
         </Card.Actions>
       </Card>
     </ScrollView>

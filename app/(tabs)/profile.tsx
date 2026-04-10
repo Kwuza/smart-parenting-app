@@ -28,25 +28,22 @@ export default function ProfileScreen() {
             key={child.id}
             title={child.name}
             description={child.date_of_birth || 'No DOB set'}
-            left={(props) => <List.Icon {...props} icon="child-care" />}
-            onPress={() => {
-              selectChild(child);
-              router.push(`/child/${child.id}`);
-            }}
+            left={(props) => <List.Icon {...props} icon="child" />}
+            onPress={() => selectChild(child)}
           />
         ))}
         <List.Item
           title="Add Child"
-          left={(props) => <List.Icon {...props} icon="add" />}
+          left={(props) => <List.Icon {...props} icon="plus" />}
           onPress={() => router.push('/child/new')}
         />
       </List.Section>
 
       <List.Section>
         <List.Subheader>Settings</List.Subheader>
-        <List.Item title="Notifications" left={(props) => <List.Icon {...props} icon="notifications" />} />
-        <List.Item title="Privacy" left={(props) => <List.Icon {...props} icon="security" />} />
-        <List.Item title="Help & Support" left={(props) => <List.Icon {...props} icon="help" />} />
+        <List.Item title="Notifications" left={(props) => <List.Icon {...props} icon="bell" />} />
+        <List.Item title="Privacy" left={(props) => <List.Icon {...props} icon="shield-lock" />} />
+        <List.Item title="Help & Support" left={(props) => <List.Icon {...props} icon="help-circle" />} />
       </List.Section>
 
       <Button mode="outlined" onPress={handleSignOut} style={styles.signOut} textColor="#EF4444">

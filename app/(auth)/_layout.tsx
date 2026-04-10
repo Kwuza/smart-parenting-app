@@ -1,26 +1,10 @@
-import { useEffect } from 'react';
-import { useRouter, useSegments } from 'expo-router';
-import { useAuth } from '../../stores/auth';
+import { Stack } from 'expo-router';
 
-export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading, loadSession } = useAuth();
-  const segments = useSegments();
-  const router = useRouter();
-
-  useEffect(() => {
-    loadSession();
-  }, []);
-
-  useEffect(() => {
-    if (loading) return;
-    const inAuthGroup = segments[0] === '(auth)';
-
-    if (!user && !inAuthGroup) {
-      router.replace('/(auth)/login');
-    } else if (user && inAuthGroup) {
-      router.replace('/(tabs)');
-    }
-  }, [user, loading, segments]);
-
-  return <>{children}</>;
+export default function AuthLayout() {
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="login" />
+      <Stack.Screen name="signup" />
+    </Stack>
+  );
 }
