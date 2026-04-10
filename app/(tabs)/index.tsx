@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, FlatList } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp, useAuth } from '../../stores/auth';
-import { getTodayActivities, Activity, ActivityType } from '../../lib/api';
+import { getTodayActivities, Activity, ActivityType, Child } from '../../lib/api';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -166,7 +166,7 @@ function RecentItem({ activity }: { activity: Activity }) {
 }
 
 export default function DashboardScreen() {
-  const { selectedChild, children, loadChildren } = useApp();
+  const { selectedChild, children, loadChildren, selectChild } = useApp();
   const { user } = useAuth();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
@@ -250,44 +250,80 @@ export default function DashboardScreen() {
 
         <Text style={styles.date}>{getDateString()}</Text>
 
-        {/* Child Selector / Add Child */}
-        {hasChild ? (
-          <TouchableOpacity
-            style={styles.childBanner}
-            activeOpacity={0.7}
-            onPress={() => router.push('/profile')}
-          >
-            <View style={styles.childAvatar}>
-              <Text style={styles.childAvatarText}>
-                {childName.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <View style={styles.childInfo}>
-              <Text style={styles.childName}>{childName}</Text>
-              <Text style={styles.childMeta}>
-                {age !== null ? `${age} years old` : 'Age not set'} · {todayActivities.length} activities today
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.addChildBanner}
-            activeOpacity={0.7}
-            onPress={() => router.push('/child/new')}
-          >
-            <View style={styles.addChildIcon}>
-              <Ionicons name="add" size={24} color="#3B82F6" />
-            </View>
-            <View style={styles.addChildContent}>
-              <Text style={styles.addChildTitle}>Add your first child</Text>
-              <Text style={styles.addChildSubtitle}>
-                Create a profile to start tracking activities
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
-          </TouchableOpacity>
-        )}
+        {/* Children Selector — horizontal scroll */}
+        <View style={styles.childrenSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Children</Text>
+            <TouchableOpacity onPress={() => router.push('/child/new')}>
+              <Text style={styles.sectionLink}>+ Add</Text>
+            </TouchableOpacity>
+          </View>
+          {children.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.childrenScroll}
+            >
+              {children.map((child) => {
+                const isSelected = child.id === selectedChild?.id;
+                const childAge = child.date_of_birth
+                  ? Math.floor(
+                      (Date.now() - new Date(child.date_of_birth).getTime()) /
+                        (365.25 * 24 * 60 * 60 * 1000)
+                    )
+                  : null;
+                return (
+                  <TouchableOpacity
+                    key={child.id}
+                    style={[styles.childChip, isSelected && styles.childChipActive]}
+                    onPress={() => selectChild(child)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.childChipAvatar, isSelected && styles.childChipAvatarActive]}>
+                      <Text style={[styles.childChipAvatarText, isSelected && styles.childChipAvatarTextActive]}>
+                        {child.name.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={[styles.childChipName, isSelected && styles.childChipNameActive]} numberOfLines={1}>
+                      {child.name}
+                    </Text>
+                    <Text style={styles.childChipAge}>
+                      {childAge !== null ? `${childAge}y` : '—'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              {/* Add child button */}
+              <TouchableOpacity
+                style={styles.addChildChip}
+                onPress={() => router.push('/child/new')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.addChildChipIcon}>
+                  <Ionicons name="add" size={20} color="#3B82F6" />
+                </View>
+                <Text style={styles.addChildChipText}>Add</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          ) : (
+            <TouchableOpacity
+              style={styles.addChildBanner}
+              activeOpacity={0.7}
+              onPress={() => router.push('/child/new')}
+            >
+              <View style={styles.addChildIcon}>
+                <Ionicons name="add" size={24} color="#3B82F6" />
+              </View>
+              <View style={styles.addChildContent}>
+                <Text style={styles.addChildTitle}>Add your first child</Text>
+                <Text style={styles.addChildSubtitle}>
+                  Create a profile to start tracking activities
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
+            </TouchableOpacity>
+          )}
+        </View>
 
         {/* Quick Log */}
         <TouchableOpacity
@@ -436,19 +472,73 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 16,
   },
-  childBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 16,
+  childrenSection: {
+    marginBottom: 20,
   },
-  childAvatar: {
+  childrenScroll: {
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  childChip: {
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minWidth: 80,
+  },
+  childChipActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
+  },
+  childChipAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  childChipAvatarActive: {
+    backgroundColor: '#3B82F6',
+  },
+  childChipAvatarText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  childChipAvatarTextActive: {
+    color: '#FFFFFF',
+  },
+  childChipName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0F172A',
+    maxWidth: 72,
+    textAlign: 'center',
+  },
+  childChipNameActive: {
+    color: '#1E40AF',
+  },
+  childChipAge: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
+  addChildChip: {
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#DBEAFE',
+    borderStyle: 'dashed',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    minWidth: 80,
+  },
+  addChildChipIcon: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -456,23 +546,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  childAvatarText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#3B82F6',
-  },
-  childInfo: {
-    flex: 1,
-  },
-  childName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#0F172A',
-  },
-  childMeta: {
+  addChildChipText: {
     fontSize: 12,
-    color: '#94A3B8',
-    marginTop: 2,
+    fontWeight: '600',
+    color: '#3B82F6',
   },
   addChildBanner: {
     flexDirection: 'row',
