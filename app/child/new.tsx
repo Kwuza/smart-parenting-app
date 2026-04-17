@@ -42,9 +42,12 @@ export default function NewChildScreen() {
     }
     setLoading(true);
     try {
-      await createChild(name.trim(), dob, user.id);
+      const newChild = await createChild(name.trim(), dob, user.id);
       await loadChildren();
-      router.back();
+      // Dismiss keyboard before navigating to avoid KeyboardAvoidingView jump
+      const { Keyboard } = require('react-native');
+      Keyboard.dismiss();
+      router.replace(`/child/routine?childId=${newChild.id}` as any);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to create profile');
     } finally {
@@ -76,11 +79,11 @@ export default function NewChildScreen() {
         {/* Illustration + Heading */}
         <View style={styles.hero}>
           <View style={styles.heroIcon}>
-            <Ionicons name="happy-outline" size={40} color="#3B82F6" />
+            <Ionicons name="happy-outline" size={40} color="#FF7F60" />
           </View>
           <Text style={styles.heading}>
             Who's joining{' '}
-            <Text style={styles.headingAccent}>NestNote</Text>?
+            <Text style={styles.headingAccent}>Smart Parenting</Text>?
           </Text>
           <Text style={styles.subtitle}>
             Add your child's profile to start tracking their daily activities and get AI-powered insights.
@@ -192,7 +195,7 @@ export default function NewChildScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
   },
   scrollContent: {
     flexGrow: 1,
@@ -229,7 +232,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 24,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFF0ED',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -242,7 +245,7 @@ const styles = StyleSheet.create({
     lineHeight: 32,
   },
   headingAccent: {
-    color: '#3B82F6',
+    color: '#FF7F60',
   },
   subtitle: {
     fontSize: 14,
@@ -253,7 +256,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   formCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     marginHorizontal: 24,
     borderRadius: 24,
     borderWidth: 1,
@@ -283,7 +286,7 @@ const styles = StyleSheet.create({
   quickSelect: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#3B82F6',
+    color: '#FF7F60',
   },
   quickAgesRow: {
     flexDirection: 'row',
@@ -294,19 +297,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 10,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFF0ED',
     borderWidth: 1,
-    borderColor: '#DBEAFE',
+    borderColor: '#FFE5E0',
   },
   ageChipText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#3B82F6',
+    color: '#FF7F60',
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FEFBF6',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -348,7 +351,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 24,
     marginTop: 24,
     borderRadius: 16,
-    shadowColor: '#3B82F6',
+    shadowColor: '#FF7F60',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
@@ -359,7 +362,7 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   createButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#FF7F60',
     borderRadius: 16,
     height: 52,
     alignItems: 'center',

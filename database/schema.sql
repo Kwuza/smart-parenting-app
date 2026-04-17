@@ -89,6 +89,7 @@ CREATE INDEX idx_activities_child_recorded ON activities(child_id, recorded_at D
 
 -- Single-column for joins
 CREATE INDEX idx_recommendations_child ON recommendations(child_id);
+CREATE INDEX idx_recommendations_child_created ON recommendations(child_id, created_at DESC);
 CREATE INDEX idx_alerts_child ON alerts(child_id);
 CREATE INDEX idx_children_parent ON children(parent_id);
 

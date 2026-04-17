@@ -1,0 +1,5 @@
+[edge_runtime]
+enabled = true
+
+[functions.analyze-child]
+verify_jwt = false

@@ -3,8 +3,9 @@ import { View, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../stores/auth';
-import { getRecommendations, getActivitySummary, Recommendation } from '../../lib/api';
+import { getRecommendations, analyzeChild, Recommendation } from '../../lib/api';
 import { useFocusEffect } from 'expo-router';
+import ScreenHeader from '../../components/ScreenHeader';
 
 type FilterValue = 'all' | 'sleep' | 'meal' | 'education' | 'screen_time' | 'high' | 'medium' | 'low';
 
@@ -28,7 +29,7 @@ const CATEGORY_COLORS: Record<string, { color: string; bg: string }> = {
   sleep: { color: '#10B981', bg: '#ECFDF5' },
   meal: { color: '#F59E0B', bg: '#FFFBEB' },
   education: { color: '#8B5CF6', bg: '#F5F3FF' },
-  screen_time: { color: '#3B82F6', bg: '#EFF6FF' },
+  screen_time: { color: '#FF7F60', bg: '#FFF0ED' },
   general: { color: '#64748B', bg: '#F1F5F9' },
 };
 
@@ -138,99 +139,32 @@ export default function AIScreen() {
     }, [selectedChild?.id])
   );
 
-  // Generate local recommendations from activity data
+  // Check if recommendations were generated today
+  const isToday = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+  };
+
+  // Call Edge Function — skip if already run today
   const handleAnalyze = async () => {
     const child = useApp.getState().selectedChild;
     if (!child) return;
+
+    // Check if we already have today's recommendations (from DB via useFocusEffect)
+    if (recommendations.length > 0 && isToday(recommendations[0].created_at)) {
+      setLastRun(new Date(recommendations[0].created_at));
+      return;
+    }
+
     setAnalyzing(true);
     try {
-      const activities = await getActivitySummary(child.id);
-      const localRecs: Recommendation[] = [];
-
-      // Analyze screen time
-      const screenActivities = activities.filter((a: any) => a.type === 'screen_time');
-      const totalScreenMins = screenActivities.reduce((sum: number, a: any) => {
-        const v = a.value as Record<string, any>;
-        return sum + (v.hours || 0) * 60 + (v.minutes || 0);
-      }, 0);
-      const avgScreenMins = screenActivities.length > 0 ? totalScreenMins / 7 : 0;
-
-      if (avgScreenMins > 120) {
-        localRecs.push({
-          id: 'local-screen-1',
-          child_id: child.id,
-          content: `Average screen time is ${Math.round(avgScreenMins / 60 * 10) / 10}h/day this week. Consider setting daily limits to 2 hours for healthier habits.`,
-          category: 'screen_time',
-          priority: avgScreenMins > 180 ? 'high' : 'medium',
-          created_at: new Date().toISOString(),
-        });
-      }
-
-      // Analyze sleep
-      const sleepActivities = activities.filter((a: any) => a.type === 'sleep');
-      const totalSleepMins = sleepActivities.reduce((sum: number, a: any) => {
-        const v = a.value as Record<string, any>;
-        return sum + (v.hours || 0) * 60 + (v.minutes || 0);
-      }, 0);
-      const avgSleepHrs = sleepActivities.length > 0 ? totalSleepMins / sleepActivities.length / 60 : 0;
-
-      if (avgSleepHrs > 0 && avgSleepHrs < 9) {
-        localRecs.push({
-          id: 'local-sleep-1',
-          child_id: child.id,
-          content: `Average sleep is ${Math.round(avgSleepHrs * 10) / 10}h/night. Children aged 6-12 need 9-12 hours. Consider an earlier bedtime.`,
-          category: 'sleep',
-          priority: avgSleepHrs < 7 ? 'high' : 'medium',
-          created_at: new Date().toISOString(),
-        });
-      }
-
-      // Analyze meals
-      const mealActivities = activities.filter((a: any) => a.type === 'meal');
-      if (mealActivities.length < 7) {
-        localRecs.push({
-          id: 'local-meal-1',
-          child_id: child.id,
-          content: `Only ${mealActivities.length} meals logged this week. Consistent meal tracking helps identify nutritional gaps.`,
-          category: 'meal',
-          priority: 'low',
-          created_at: new Date().toISOString(),
-        });
-      }
-
-      // Analyze education
-      const eduActivities = activities.filter((a: any) => a.type === 'education');
-      const totalEduMins = eduActivities.reduce((sum: number, a: any) => {
-        const v = a.value as Record<string, any>;
-        return sum + (v.hours || 0) * 60 + (v.minutes || 0);
-      }, 0);
-
-      if (totalEduMins < 30) {
-        localRecs.push({
-          id: 'local-edu-1',
-          child_id: child.id,
-          content: `Learning time is low this week (${totalEduMins} mins total). Try reading together for 15-20 minutes daily.`,
-          category: 'education',
-          priority: 'medium',
-          created_at: new Date().toISOString(),
-        });
-      }
-
-      // Default if no specific insights
-      if (localRecs.length === 0) {
-        localRecs.push({
-          id: 'local-default-1',
-          child_id: child.id,
-          content: activities.length === 0
-            ? 'Start logging daily activities to get personalized insights about screen time, sleep, meals, and learning habits.'
-            : 'Looking good! Keep logging activities consistently for more detailed insights.',
-          category: 'general',
-          priority: 'low',
-          created_at: new Date().toISOString(),
-        });
-      }
-
-      setRecommendations(localRecs);
+      const result = await analyzeChild(child.id);
+      // Reload from DB to get the persisted records
+      const fresh = await getRecommendations(child.id);
+      setRecommendations(fresh);
       setLastRun(new Date());
     } catch (err) {
       console.error('Analysis failed:', err);
@@ -267,23 +201,11 @@ export default function AIScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.headerRow}>
-            <Ionicons name="sparkles" size={20} color="#3B82F6" />
-            <Text style={styles.headerTitle}>AI Insights</Text>
-          </View>
-          <TouchableOpacity style={styles.childSelector}>
-            <Text style={styles.childSelectorText}>{selectedChild.name}</Text>
-            <Ionicons name="chevron-down" size={14} color="#64748B" />
-          </TouchableOpacity>
-        </View>
-        <View style={styles.liveIndicator}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveText}>Live</Text>
-        </View>
-      </View>
+      <ScreenHeader
+        title="AI Insights"
+        icon="sparkles"
+        subtitle={lastRun ? `Last run ${lastRun.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Not run yet'}
+      />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -296,7 +218,7 @@ export default function AIScreen() {
           activeOpacity={0.85}
           style={styles.analyzeButton}
         >
-          <Ionicons name="flash-outline" size={18} color="#3B82F6" />
+          <Ionicons name="flash-outline" size={18} color="#FF7F60" />
           <Text style={styles.analyzeText}>
             {analyzing ? 'Analyzing...' : 'Run AI Analysis'}
           </Text>
@@ -348,7 +270,7 @@ export default function AIScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FEFBF6',
   },
   empty: {
     flex: 1,
@@ -361,61 +283,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#94A3B8',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  headerLeft: {
-    gap: 2,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  childSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    alignSelf: 'flex-start',
-    marginTop: 4,
-  },
-  childSelectorText: {
-    fontSize: 14,
-    color: '#64748B',
-  },
-  liveIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#F0FDF4',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#22C55E',
-  },
-  liveText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#16A34A',
-  },
+
   scrollContent: {
     padding: 20,
     paddingTop: 16,
@@ -424,7 +292,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -439,7 +307,7 @@ const styles = StyleSheet.create({
   analyzeText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: '#FF7F60',
     flex: 1,
   },
   lastRunText: {
@@ -448,7 +316,7 @@ const styles = StyleSheet.create({
   },
   summaryStrip: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -505,8 +373,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   filterChipActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#3B82F6',
+    backgroundColor: '#FFF0ED',
+    borderColor: '#FF7F60',
   },
   filterText: {
     fontSize: 12,
@@ -514,13 +382,13 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   filterTextActive: {
-    color: '#3B82F6',
+    color: '#FF7F60',
   },
   recList: {
     gap: 10,
   },
   recCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -572,7 +440,7 @@ const styles = StyleSheet.create({
   emptyCard: {
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 16,
     borderWidth: 1,
     borderStyle: 'dashed',

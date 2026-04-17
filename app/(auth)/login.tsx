@@ -83,7 +83,7 @@ export default function LoginScreen() {
             <View style={styles.logoGradient}>
               <Ionicons name="home" size={20} color="#fff" />
             </View>
-            <Text style={styles.brandName}>NestNote</Text>
+            <Text style={styles.brandName}>Smart Parenting</Text>
           </View>
 
           <Text style={styles.heading}>
@@ -216,7 +216,7 @@ export default function LoginScreen() {
       {showWelcome && (
         <Animated.View style={[styles.welcomeOverlay, { opacity: welcomeOpacity }]}>
           <Animated.View style={[styles.welcomeContent, { transform: [{ scale: welcomeScale }] }]}>
-            <Ionicons name="happy" size={56} color="#3B82F6" style={{ marginBottom: 16 }} />
+            <Ionicons name="happy" size={56} color="#FF7F60" style={{ marginBottom: 16 }} />
             <Text style={styles.welcomeTitle}>Welcome back!</Text>
             <Text style={styles.welcomeSubtitle}>Great to see you again 💙</Text>
           </Animated.View>
@@ -229,7 +229,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
   },
   scrollContent: {
     flexGrow: 1,
@@ -252,10 +252,10 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#FF7F60',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#3B82F6',
+    shadowColor: '#FF7F60',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
     lineHeight: 32,
   },
   headingAccent: {
-    color: '#3B82F6',
+    color: '#FF7F60',
   },
   subtitle: {
     fontSize: 14,
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   formCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 24,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -331,12 +331,12 @@ const styles = StyleSheet.create({
   forgotText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#3B82F6',
+    color: '#FF7F60',
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FEFBF6',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -363,14 +363,14 @@ const styles = StyleSheet.create({
   loginButtonWrapper: {
     marginTop: 8,
     borderRadius: 16,
-    shadowColor: '#3B82F6',
+    shadowColor: '#FF7F60',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
     elevation: 6,
   },
   loginButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#FF7F60',
     borderRadius: 16,
     height: 52,
     alignItems: 'center',
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -446,12 +446,12 @@ const styles = StyleSheet.create({
   bottomLinkText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: '#FF7F60',
   },
   // Welcome animation
   welcomeOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 100,

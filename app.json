@@ -5,7 +5,9 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.smartparenting.app"
@@ -18,7 +20,12 @@
       "output": "static"
     },
     "main": "index.js",
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      "expo-asset",
+      "expo-font",
+      "expo-secure-store"
+    ],
     "scheme": "smart-parenting-app",
     "experiments": {
       "typedRoutes": true

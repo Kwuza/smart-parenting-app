@@ -36,7 +36,7 @@ function getActivityLabel(type: string, value: Record<string, any>): string {
 
   switch (type) {
     case 'screen_time':
-      return `Screen time — ${dur}${value.device ? ` on ${value.device}` : ''}`;
+      return `Screen time (${value.category || 'leisure'}) — ${dur}${value.device ? ` on ${value.device}` : ''}`;
     case 'sleep':
       return `Sleep — ${dur}${value.quality ? ` (${value.quality})` : ''}`;
     case 'nap':
@@ -141,7 +141,7 @@ function StatCard({ item }: { item: StatItem }) {
 
 function RecentItem({ activity }: { activity: Activity }) {
   const typeConfig: Record<string, { color: string; bg: string; letter: string }> = {
-    screen_time: { color: '#3B82F6', bg: '#EFF6FF', letter: 'S' },
+    screen_time: { color: '#FF7F60', bg: '#FFF0ED', letter: 'S' },
     sleep: { color: '#10B981', bg: '#ECFDF5', letter: 'Z' },
     nap: { color: '#8B5CF6', bg: '#F5F3FF', letter: 'N' },
     meal: { color: '#F59E0B', bg: '#FFFBEB', letter: 'M' },
@@ -221,7 +221,7 @@ export default function DashboardScreen() {
   const stats = calculateStats(todayActivities);
 
   const statItems: StatItem[] = [
-    { key: 'screen', icon: 'phone-portrait-outline', label: 'Screen Time', value: stats.screenTime, subtitle: 'today', color: '#3B82F6', bgColor: '#EFF6FF' },
+    { key: 'screen', icon: 'phone-portrait-outline', label: 'Screen Time', value: stats.screenTime, subtitle: 'today', color: '#FF7F60', bgColor: '#FFF0ED' },
     { key: 'sleep', icon: 'moon-outline', label: 'Sleep', value: stats.sleep, subtitle: 'last night', color: '#10B981', bgColor: '#ECFDF5' },
     { key: 'meal', icon: 'restaurant-outline', label: 'Meals', value: stats.meals, subtitle: 'tracked today', color: '#F59E0B', bgColor: '#FFFBEB' },
     { key: 'edu', icon: 'school-outline', label: 'Education', value: stats.education, subtitle: 'today', color: '#8B5CF6', bgColor: '#F5F3FF' },
@@ -233,7 +233,7 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3B82F6" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FF7F60" />
         }
       >
         {/* Header */}
@@ -300,7 +300,7 @@ export default function DashboardScreen() {
                 activeOpacity={0.7}
               >
                 <View style={styles.addChildChipIcon}>
-                  <Ionicons name="add" size={20} color="#3B82F6" />
+                  <Ionicons name="add" size={20} color="#FF7F60" />
                 </View>
                 <Text style={styles.addChildChipText}>Add</Text>
               </TouchableOpacity>
@@ -312,7 +312,7 @@ export default function DashboardScreen() {
               onPress={() => router.push('/child/new')}
             >
               <View style={styles.addChildIcon}>
-                <Ionicons name="add" size={24} color="#3B82F6" />
+                <Ionicons name="add" size={24} color="#FF7F60" />
               </View>
               <View style={styles.addChildContent}>
                 <Text style={styles.addChildTitle}>Add your first child</Text>
@@ -417,7 +417,7 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FEFBF6',
   },
   scrollContent: {
     paddingBottom: 20,
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 4,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FEFBF6',
   },
   headerContent: {},
   greeting: {
@@ -447,7 +447,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -482,7 +482,7 @@ const styles = StyleSheet.create({
   childChip: {
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
@@ -491,8 +491,8 @@ const styles = StyleSheet.create({
     minWidth: 80,
   },
   childChipActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#3B82F6',
+    backgroundColor: '#FFF0ED',
+    borderColor: '#FF7F60',
   },
   childChipAvatar: {
     width: 40,
@@ -503,7 +503,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   childChipAvatarActive: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#FF7F60',
   },
   childChipAvatarText: {
     fontSize: 16,
@@ -532,7 +532,7 @@ const styles = StyleSheet.create({
     gap: 6,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: '#DBEAFE',
+    borderColor: '#FFE5E0',
     borderStyle: 'dashed',
     paddingVertical: 14,
     paddingHorizontal: 16,
@@ -542,25 +542,25 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFF0ED',
     alignItems: 'center',
     justifyContent: 'center',
   },
   addChildChipText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: '#FF7F60',
   },
   addChildBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFF0ED',
     marginHorizontal: 20,
     borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#DBEAFE',
+    borderColor: '#FFE5E0',
     borderStyle: 'dashed',
     marginBottom: 16,
   },
@@ -568,11 +568,11 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#DBEAFE',
+    borderColor: '#FFE5E0',
   },
   addChildContent: {
     flex: 1,
@@ -588,12 +588,12 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   quickLog: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#FF7F60',
     marginHorizontal: 20,
     borderRadius: 20,
     padding: 20,
     marginBottom: 24,
-    shadowColor: '#3B82F6',
+    shadowColor: '#FF7F60',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
@@ -630,7 +630,7 @@ const styles = StyleSheet.create({
   sectionLink: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#3B82F6',
+    color: '#FF7F60',
   },
   statsGrid: {
     flexDirection: 'row',
@@ -642,7 +642,7 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     minWidth: '46%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
@@ -686,7 +686,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
@@ -725,7 +725,7 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     marginHorizontal: 20,
     borderRadius: 16,
     borderWidth: 1,
@@ -749,11 +749,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#FF7F60',
     marginHorizontal: 20,
     borderRadius: 20,
     padding: 18,
-    shadowColor: '#3B82F6',
+    shadowColor: '#FF7F60',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
     shadowRadius: 16,

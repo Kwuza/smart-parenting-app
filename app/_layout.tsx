@@ -4,17 +4,19 @@ import { PaperProvider, MD3LightTheme } from 'react-native-paper';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../stores/auth';
 import { View, ActivityIndicator } from 'react-native';
+import { initNotifications } from '../lib/notifications';
+import * as Notifications from 'expo-notifications';
 
 const theme = {
   ...MD3LightTheme,
   colors: {
     ...MD3LightTheme.colors,
-    primary: '#3B82F6',
-    primaryContainer: '#DBEAFE',
+    primary: '#FF7F60',
+    primaryContainer: '#FFE5E0',
     secondary: '#F1F5F9',
     secondaryContainer: '#E2E8F0',
-    surface: '#FFFFFF',
-    background: '#F8FAFC',
+    surface: '#FFFDFF',
+    background: '#FEFBF6',
     error: '#EF4444',
     onPrimary: '#FFFFFF',
     onSecondary: '#334155',
@@ -22,8 +24,8 @@ const theme = {
     onBackground: '#0F172A',
     outline: '#E2E8F0',
     outlineVariant: '#F1F5F9',
-    screenTime: '#3B82F6',
-    screenTimeBg: '#EFF6FF',
+    screenTime: '#FF7F60',
+    screenTimeBg: '#FFF0ED',
     sleep: '#10B981',
     sleepBg: '#ECFDF5',
     meals: '#F59E0B',
@@ -41,6 +43,16 @@ export default function RootLayout() {
 
   useEffect(() => {
     loadSession();
+    initNotifications();
+
+    // Handle notification taps
+    const sub = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      if (data?.childId) {
+        // Could navigate to log screen for this child
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {
@@ -66,8 +78,8 @@ export default function RootLayout() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF' }}>
-        <ActivityIndicator size="large" color="#3B82F6" />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FEFBF6' }}>
+        <ActivityIndicator size="large" color="#FF7F60" />
       </View>
     );
   }
@@ -79,6 +91,7 @@ export default function RootLayout() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="child/new" options={{ title: 'Add Child' }} />
+        <Stack.Screen name="child/routine" options={{ title: 'Set Routine' }} />
       </Stack>
     </PaperProvider>
   );

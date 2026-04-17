@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Switch, Modal, Animated } from 'react-native';
+import { View, ScrollView, StyleSheet, TouchableOpacity, Switch, Modal, Animated, Alert } from 'react-native';
 import { Text, TextInput } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth, useApp } from '../../stores/auth';
+import { updateChildSettings, Child } from '../../lib/api';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -88,6 +89,29 @@ export default function ProfileScreen() {
   const goodbyeOpacity = useRef(new Animated.Value(0)).current;
   const goodbyeScale = useRef(new Animated.Value(0.8)).current;
 
+  // Child settings edit modal
+  const [editChild, setEditChild] = useState<Child | null>(null);
+  const [editMaxScreen, setEditMaxScreen] = useState<number | null>(null);
+  const [editMinSleep, setEditMinSleep] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const SCREEN_LIMITS = [
+    { label: 'No limit', value: null },
+    { label: '30 min', value: 30 },
+    { label: '1 hour', value: 60 },
+    { label: '1.5 hours', value: 90 },
+    { label: '2 hours', value: 120 },
+    { label: '3 hours', value: 180 },
+  ];
+  const SLEEP_MINS = [
+    { label: 'No minimum', value: null },
+    { label: '8 hours', value: 480 },
+    { label: '9 hours', value: 540 },
+    { label: '10 hours', value: 600 },
+    { label: '11 hours', value: 660 },
+    { label: '12 hours', value: 720 },
+  ];
+
   const userName = user?.user_metadata?.name || 'Parent';
   const userEmail = user?.email || '';
   const initials = userName
@@ -97,7 +121,32 @@ export default function ProfileScreen() {
     .toUpperCase()
     .slice(0, 2);
 
-  const childColors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899'];
+  const childColors = ['#FF7F60', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899'];
+
+  const openChildSettings = (child: Child) => {
+    setEditChild(child);
+    setEditMaxScreen(child.max_screen_time_minutes);
+    setEditMinSleep(child.min_sleep_minutes);
+  };
+
+  const handleSaveChildSettings = async () => {
+    if (!editChild) return;
+    setSaving(true);
+    try {
+      await updateChildSettings(editChild.id, {
+        max_screen_time_minutes: editMaxScreen,
+        min_sleep_minutes: editMinSleep,
+      });
+      // Refresh children in store
+      const { loadChildren } = useApp.getState();
+      await loadChildren();
+      setEditChild(null);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleSignOut = async () => {
     setShowSignOutConfirm(false);
@@ -149,7 +198,7 @@ export default function ProfileScreen() {
             <Text style={styles.profileEmail}>{userEmail}</Text>
           </View>
           <TouchableOpacity style={styles.profileEditBtn} activeOpacity={0.7}>
-            <Ionicons name="pencil" size={16} color="#3B82F6" />
+            <Ionicons name="pencil" size={16} color="#FF7F60" />
           </TouchableOpacity>
         </View>
 
@@ -157,22 +206,22 @@ export default function ProfileScreen() {
         <Section title="Account">
           <Item
             icon="person-outline"
-            iconBg="#EFF6FF"
-            iconColor="#3B82F6"
+            iconBg='#FFF0ED'
+            iconColor="#FF7F60"
             label="Edit Profile"
             description="Update your name and photo"
           />
           <Item
             icon="mail-outline"
-            iconBg="#EFF6FF"
-            iconColor="#3B82F6"
+            iconBg='#FFF0ED'
+            iconColor="#FF7F60"
             label="Email"
             description={userEmail}
           />
           <Item
             icon="lock-closed-outline"
-            iconBg="#EFF6FF"
-            iconColor="#3B82F6"
+            iconBg='#FFF0ED'
+            iconColor="#FF7F60"
             label="Change Password"
             description="Update your account password"
           />
@@ -193,13 +242,14 @@ export default function ProfileScreen() {
                 name={child.name}
                 age={age}
                 color={childColors[i % childColors.length]}
+                onEdit={() => openChildSettings(child)}
               />
             );
           })}
           <Item
             icon="add-circle-outline"
-            iconBg="#EFF6FF"
-            iconColor="#3B82F6"
+            iconBg='#FFF0ED'
+            iconColor="#FF7F60"
             label="Add Child Profile"
             description="Monitor a new family member"
             onPress={() => router.push('/child/new')}
@@ -219,7 +269,7 @@ export default function ProfileScreen() {
                 value={notifEnabled}
                 onValueChange={setNotifEnabled}
                 trackColor={{ false: '#E2E8F0', true: '#93C5FD' }}
-                thumbColor={notifEnabled ? '#3B82F6' : '#F1F5F9'}
+                thumbColor={notifEnabled ? '#FF7F60' : '#F1F5F9'}
               />
             }
           />
@@ -234,7 +284,7 @@ export default function ProfileScreen() {
                 value={weeklyReport}
                 onValueChange={setWeeklyReport}
                 trackColor={{ false: '#E2E8F0', true: '#93C5FD' }}
-                thumbColor={weeklyReport ? '#3B82F6' : '#F1F5F9'}
+                thumbColor={weeklyReport ? '#FF7F60' : '#F1F5F9'}
               />
             }
           />
@@ -276,10 +326,66 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         {/* Version */}
-        <Text style={styles.version}>NestNote v1.0.0</Text>
+        <Text style={styles.version}>Smart Parenting v1.0.0</Text>
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Child Settings Edit Modal */}
+      <Modal visible={!!editChild} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setEditChild(null)}>
+          <View style={styles.childSettingsModal}>
+            <View style={styles.childSettingsHeader}>
+              <Ionicons name="settings-outline" size={24} color="#FF7F60" />
+              <Text style={styles.childSettingsTitle}>{editChild?.name}'s Settings</Text>
+            </View>
+
+            {/* Max Screen Time */}
+            <Text style={styles.childSettingsLabel}>Max daily screen time</Text>
+            <View style={styles.presetGrid}>
+              {SCREEN_LIMITS.map((opt) => (
+                <TouchableOpacity
+                  key={opt.label}
+                  style={[styles.presetChip, editMaxScreen === opt.value && styles.presetChipActive]}
+                  onPress={() => setEditMaxScreen(opt.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.presetChipText, editMaxScreen === opt.value && styles.presetChipTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Min Sleep */}
+            <Text style={styles.childSettingsLabel}>Minimum sleep time</Text>
+            <View style={styles.presetGrid}>
+              {SLEEP_MINS.map((opt) => (
+                <TouchableOpacity
+                  key={opt.label}
+                  style={[styles.presetChip, editMinSleep === opt.value && styles.presetChipActive]}
+                  onPress={() => setEditMinSleep(opt.value)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.presetChipText, editMinSleep === opt.value && styles.presetChipTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Buttons */}
+            <View style={styles.childSettingsButtons}>
+              <TouchableOpacity style={styles.childSettingsCancel} onPress={() => setEditChild(null)} activeOpacity={0.7}>
+                <Text style={styles.childSettingsCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.childSettingsSave} onPress={handleSaveChildSettings} activeOpacity={0.7} disabled={saving}>
+                <Text style={styles.childSettingsSaveText}>{saving ? 'Saving...' : 'Save'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Sign Out Confirmation Modal */}
       <Modal visible={showSignOutConfirm} transparent animationType="fade">
@@ -306,7 +412,7 @@ export default function ProfileScreen() {
       {showGoodbye && (
         <Animated.View style={[styles.goodbyeOverlay, { opacity: goodbyeOpacity }]}>
           <Animated.View style={[styles.goodbyeContent, { transform: [{ scale: goodbyeScale }] }]}>
-            <Ionicons name="heart" size={48} color="#3B82F6" style={{ marginBottom: 16 }} />
+            <Ionicons name="heart" size={48} color="#FF7F60" style={{ marginBottom: 16 }} />
             <Text style={styles.goodbyeTitle}>See you soon!</Text>
             <Text style={styles.goodbyeSubtitle}>Take care of your little ones 💙</Text>
           </Animated.View>
@@ -317,12 +423,12 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  container: { flex: 1, backgroundColor: '#FEFBF6' },
   header: {
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
   },
@@ -333,7 +439,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 20,
     padding: 18,
     marginBottom: 24,
@@ -344,7 +450,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#3B82F6',
+    backgroundColor: '#FF7F60',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -356,7 +462,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFF0ED',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -372,7 +478,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   sectionCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -422,7 +528,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 16,
     borderWidth: 2,
     borderColor: '#FEE2E2',
@@ -445,7 +551,7 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   confirmModal: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     borderRadius: 24,
     padding: 28,
     width: '100%',
@@ -511,7 +617,7 @@ const styles = StyleSheet.create({
   // Goodbye animation
   goodbyeOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FFFDFF',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 100,
@@ -528,5 +634,98 @@ const styles = StyleSheet.create({
   goodbyeSubtitle: {
     fontSize: 16,
     color: '#64748B',
+  },
+  // Child Settings Modal
+  childSettingsModal: {
+    backgroundColor: '#FFFDFF',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 360,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  childSettingsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  childSettingsTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  childSettingsLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 10,
+    marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  presetGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  presetChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  presetChipActive: {
+    backgroundColor: '#FFF0ED',
+    borderColor: '#FF7F60',
+  },
+  presetChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  presetChipTextActive: {
+    color: '#FF7F60',
+  },
+  childSettingsButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  childSettingsCancel: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+  },
+  childSettingsCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  childSettingsSave: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: '#FF7F60',
+  },
+  childSettingsSaveText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

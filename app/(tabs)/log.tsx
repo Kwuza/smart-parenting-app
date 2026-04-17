@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react';
-import { View, ScrollView, StyleSheet, Alert, TouchableOpacity, TextInput as RNTextInput, Modal, FlatList } from 'react-native';
+import { View, ScrollView, StyleSheet, Alert, TouchableOpacity, TextInput as RNTextInput, FlatList } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../stores/auth';
 import { logActivity, ActivityType, Child } from '../../lib/api';
+import ScreenHeader from '../../components/ScreenHeader';
 
 type ActivityTypeExtended = ActivityType | 'nap' | 'physical_activity';
 
@@ -17,7 +18,7 @@ interface TypeConfig {
 }
 
 const ACTIVITY_TYPES: TypeConfig[] = [
-  { key: 'screen_time', label: 'Screen', icon: 'phone-portrait-outline', color: '#3B82F6', bgColor: '#EFF6FF' },
+  { key: 'screen_time', label: 'Screen', icon: 'phone-portrait-outline', color: '#FF7F60', bgColor: '#FFF0ED' },
   { key: 'sleep', label: 'Sleep', icon: 'moon-outline', color: '#10B981', bgColor: '#ECFDF5' },
   { key: 'nap', label: 'Nap', icon: 'bed-outline', color: '#8B5CF6', bgColor: '#F5F3FF' },
   { key: 'meal', label: 'Meals', icon: 'restaurant-outline', color: '#F59E0B', bgColor: '#FFFBEB' },
@@ -36,6 +37,11 @@ const DEVICES = [
   { key: 'tablet', label: 'Tablet', icon: 'tablet-portrait-outline' as const },
   { key: 'tv', label: 'TV', icon: 'tv-outline' as const },
   { key: 'computer', label: 'PC', icon: 'desktop-outline' as const },
+];
+
+const SCREEN_CATEGORIES = [
+  { key: 'leisure', label: 'Leisure', icon: 'game-controller-outline' as const },
+  { key: 'educational', label: 'Educational', icon: 'book-outline' as const },
 ];
 
 const MEALS = [
@@ -96,7 +102,7 @@ function DurationInput({
           onPress={() => onHoursChange(String(Math.min(23, (parseInt(hours) || 0) + 1)))}
           activeOpacity={0.6}
         >
-          <Ionicons name="add" size={18} color="#3B82F6" />
+          <Ionicons name="add" size={18} color="#FF7F60" />
         </TouchableOpacity>
         <TouchableOpacity activeOpacity={1} onPress={() => hRef.current?.focus()}>
           <RNTextInput
@@ -129,7 +135,7 @@ function DurationInput({
           onPress={() => onMinutesChange(String(Math.min(59, (parseInt(minutes) || 0) + 5)))}
           activeOpacity={0.6}
         >
-          <Ionicons name="add" size={18} color="#3B82F6" />
+          <Ionicons name="add" size={18} color="#FF7F60" />
         </TouchableOpacity>
         <TouchableOpacity activeOpacity={1} onPress={() => mRef.current?.focus()}>
           <RNTextInput
@@ -155,6 +161,186 @@ function DurationInput({
         </TouchableOpacity>
         <Text style={styles.durationLabel}>min</Text>
       </View>
+    </View>
+  );
+}
+
+// --- Time Range Input (start/end → calculated duration) ---
+function TimeRangeInput({
+  startHour,
+  startMinute,
+  endHour,
+  endMinute,
+  onStartHourChange,
+  onStartMinuteChange,
+  onEndHourChange,
+  onEndMinuteChange,
+  startPeriod,
+  endPeriod,
+  onStartPeriodChange,
+  onEndPeriodChange,
+}: {
+  startHour: string;
+  startMinute: string;
+  endHour: string;
+  endMinute: string;
+  onStartHourChange: (v: string) => void;
+  onStartMinuteChange: (v: string) => void;
+  onEndHourChange: (v: string) => void;
+  onEndMinuteChange: (v: string) => void;
+  startPeriod: 'AM' | 'PM';
+  endPeriod: 'AM' | 'PM';
+  onStartPeriodChange: (v: 'AM' | 'PM') => void;
+  onEndPeriodChange: (v: 'AM' | 'PM') => void;
+}) {
+  const shRef = useRef<RNTextInput>(null);
+  const smRef = useRef<RNTextInput>(null);
+  const ehRef = useRef<RNTextInput>(null);
+  const emRef = useRef<RNTextInput>(null);
+
+  // Calculate duration
+  const calcMinutes = () => {
+    let sH = parseInt(startHour) || 0;
+    let sM = parseInt(startMinute) || 0;
+    let eH = parseInt(endHour) || 0;
+    let eM = parseInt(endMinute) || 0;
+
+    // Convert to 24h
+    if (startPeriod === 'PM' && sH !== 12) sH += 12;
+    if (startPeriod === 'AM' && sH === 12) sH = 0;
+    if (endPeriod === 'PM' && eH !== 12) eH += 12;
+    if (endPeriod === 'AM' && eH === 12) eH = 0;
+
+    let startTotal = sH * 60 + sM;
+    let endTotal = eH * 60 + eM;
+    if (endTotal < startTotal) endTotal += 24 * 60; // overnight
+    return endTotal - startTotal;
+  };
+
+  const totalMins = calcMinutes();
+  const durH = Math.floor(totalMins / 60);
+  const durM = totalMins % 60;
+  const durText = totalMins > 0
+    ? `= ${durH > 0 ? `${durH}h ` : ''}${durM > 0 ? `${durM}m` : ''}`.trim()
+    : 'Set start and end time';
+
+  const TimeBlock = ({
+    label,
+    hour,
+    minute,
+    period,
+    onHourChange,
+    onMinuteChange,
+    onPeriodChange,
+    hRef,
+    mRef,
+  }: {
+    label: string;
+    hour: string;
+    minute: string;
+    period: 'AM' | 'PM';
+    onHourChange: (v: string) => void;
+    onMinuteChange: (v: string) => void;
+    onPeriodChange: (v: 'AM' | 'PM') => void;
+    hRef: any;
+    mRef: any;
+  }) => (
+    <View style={styles.timeBlock}>
+      <Text style={styles.timeBlockLabel}>{label}</Text>
+      <View style={styles.timeBlockRow}>
+        <View style={styles.timeDigitCol}>
+          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => onHourChange(String(Math.min(12, (parseInt(hour) || 0) + 1)))}>
+            <Ionicons name="add" size={18} color="#FF7F60" />
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={1} onPress={() => hRef.current?.focus()}>
+            <RNTextInput
+              ref={hRef}
+              value={hour}
+              onChangeText={(t) => { const n = Math.min(12, Math.max(1, parseInt(t.replace(/[^0-9]/g, '')) || 0)); onHourChange(String(n)); }}
+              keyboardType="numeric"
+              style={[styles.durationText, { width: 52 }]}
+              maxLength={2}
+              selectTextOnFocus
+              placeholder="12"
+              placeholderTextColor="#CBD5E1"
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => onHourChange(String(Math.max(1, (parseInt(hour) || 0) - 1)))}>
+            <Ionicons name="remove" size={18} color="#64748B" />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.durationColon}>:</Text>
+        <View style={styles.timeDigitCol}>
+          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => onMinuteChange(String(Math.min(59, (parseInt(minute) || 0) + 5)))}>
+            <Ionicons name="add" size={18} color="#FF7F60" />
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={1} onPress={() => mRef.current?.focus()}>
+            <RNTextInput
+              ref={mRef}
+              value={minute}
+              onChangeText={(t) => { const n = Math.min(59, Math.max(0, parseInt(t.replace(/[^0-9]/g, '')) || 0)); onMinuteChange(String(n).padStart(2, '0')); }}
+              keyboardType="numeric"
+              style={[styles.durationText, { width: 52 }]}
+              maxLength={2}
+              selectTextOnFocus
+              placeholder="00"
+              placeholderTextColor="#CBD5E1"
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => onMinuteChange(String(Math.max(0, (parseInt(minute) || 0) - 5)))}>
+            <Ionicons name="remove" size={18} color="#64748B" />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.timePeriodCol}>
+          <TouchableOpacity
+            style={[styles.periodBtn, period === 'AM' && styles.periodBtnActive]}
+            activeOpacity={0.7}
+            onPress={() => onPeriodChange('AM')}
+          >
+            <Text style={[styles.periodText, period === 'AM' && styles.periodTextActive]}>AM</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.periodBtn, period === 'PM' && styles.periodBtnActive]}
+            activeOpacity={0.7}
+            onPress={() => onPeriodChange('PM')}
+          >
+            <Text style={[styles.periodText, period === 'PM' && styles.periodTextActive]}>PM</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+
+  return (
+    <View style={styles.timeRangeContainer}>
+      <View style={styles.timeRangeRow}>
+        <TimeBlock
+          label="Start"
+          hour={startHour}
+          minute={startMinute}
+          period={startPeriod}
+          onHourChange={onStartHourChange}
+          onMinuteChange={onStartMinuteChange}
+          onPeriodChange={onStartPeriodChange}
+          hRef={shRef}
+          mRef={smRef}
+        />
+        <View style={styles.timeRangeArrow}>
+          <Ionicons name="arrow-down" size={18} color="#CBD5E1" />
+        </View>
+        <TimeBlock
+          label="End"
+          hour={endHour}
+          minute={endMinute}
+          period={endPeriod}
+          onHourChange={onEndHourChange}
+          onMinuteChange={onEndMinuteChange}
+          onPeriodChange={onEndPeriodChange}
+          hRef={ehRef}
+          mRef={emRef}
+        />
+      </View>
+      <Text style={styles.durationCalc}>{durText}</Text>
     </View>
   );
 }
@@ -189,7 +375,7 @@ function ChipSelector({
             activeOpacity={0.7}
           >
             {showIcon && item.icon && (
-              <Ionicons name={item.icon as any} size={16} color={isActive ? '#3B82F6' : '#64748B'} style={{ marginRight: 4 }} />
+              <Ionicons name={item.icon as any} size={16} color={isActive ? '#FF7F60' : '#64748B'} style={{ marginRight: 4 }} />
             )}
             {showEmoji && item.emoji && (
               <Text style={{ fontSize: 14, marginRight: 4 }}>{item.emoji}</Text>
@@ -229,7 +415,7 @@ function MultiChipSelector({
             <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
               {item.label}
             </Text>
-            {isActive && <Ionicons name="checkmark" size={14} color="#3B82F6" style={{ marginLeft: 2 }} />}
+            {isActive && <Ionicons name="checkmark" size={14} color="#FF7F60" style={{ marginLeft: 2 }} />}
           </TouchableOpacity>
         );
       })}
@@ -242,16 +428,45 @@ export default function LogActivityScreen() {
   const [activityType, setActivityType] = useState<ActivityTypeExtended>('screen_time');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [showChildPicker, setShowChildPicker] = useState(false);
   const { selectedChild, children, selectChild } = useApp();
   const router = useRouter();
 
-  // Duration (shared across screen, sleep, nap, education, physical)
+  // Duration (screen_time only — uses hours/minutes)
   const [hours, setHours] = useState('1');
   const [minutes, setMinutes] = useState('30');
 
+  // Time range (sleep, nap, education, physical — start/end, duration auto-calculated)
+  const [sleepStartH, setSleepStartH] = useState('9');
+  const [sleepStartM, setSleepStartM] = useState('00');
+  const [sleepStartP, setSleepStartP] = useState<'AM' | 'PM'>('PM');
+  const [sleepEndH, setSleepEndH] = useState('6');
+  const [sleepEndM, setSleepEndM] = useState('00');
+  const [sleepEndP, setSleepEndP] = useState<'AM' | 'PM'>('AM');
+
+  const [napStartH, setNapStartH] = useState('1');
+  const [napStartM, setNapStartM] = useState('00');
+  const [napStartP, setNapStartP] = useState<'AM' | 'PM'>('PM');
+  const [napEndH, setNapEndH] = useState('2');
+  const [napEndM, setNapEndM] = useState('00');
+  const [napEndP, setNapEndP] = useState<'AM' | 'PM'>('PM');
+
+  const [learnStartH, setLearnStartH] = useState('3');
+  const [learnStartM, setLearnStartM] = useState('00');
+  const [learnStartP, setLearnStartP] = useState<'AM' | 'PM'>('PM');
+  const [learnEndH, setLearnEndH] = useState('4');
+  const [learnEndM, setLearnEndM] = useState('00');
+  const [learnEndP, setLearnEndP] = useState<'AM' | 'PM'>('PM');
+
+  const [activeStartH, setActiveStartH] = useState('4');
+  const [activeStartM, setActiveStartM] = useState('00');
+  const [activeStartP, setActiveStartP] = useState<'AM' | 'PM'>('PM');
+  const [activeEndH, setActiveEndH] = useState('5');
+  const [activeEndM, setActiveEndM] = useState('00');
+  const [activeEndP, setActiveEndP] = useState<'AM' | 'PM'>('PM');
+
   // Screen time
   const [device, setDevice] = useState('phone');
+  const [screenCategory, setScreenCategory] = useState('leisure');
 
   // Sleep
   const [sleepQuality, setSleepQuality] = useState('good');
@@ -275,6 +490,21 @@ export default function LogActivityScreen() {
 
   const activeType = ACTIVITY_TYPES.find((t) => t.key === activityType)!;
 
+  // Calculate hours/minutes from time range
+  const calcDuration = (sH: string, sM: string, sP: 'AM' | 'PM', eH: string, eM: string, eP: 'AM' | 'PM') => {
+    let startH = parseInt(sH) || 0;
+    let startMin = parseInt(sM) || 0;
+    let endH = parseInt(eH) || 0;
+    let endMin = parseInt(eM) || 0;
+    if (sP === 'PM' && startH !== 12) startH += 12;
+    if (sP === 'AM' && startH === 12) startH = 0;
+    if (eP === 'PM' && endH !== 12) endH += 12;
+    if (eP === 'AM' && endH === 12) endH = 0;
+    let total = (endH * 60 + endMin) - (startH * 60 + startMin);
+    if (total < 0) total += 24 * 60;
+    return { hours: Math.floor(total / 60), minutes: total % 60 };
+  };
+
   const toggleFoodGroup = (key: string) => {
     setFoodGroups((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
@@ -295,14 +525,18 @@ export default function LogActivityScreen() {
       let value: Record<string, any> = {};
       switch (activityType) {
         case 'screen_time':
-          value = { hours: parseInt(hours) || 0, minutes: parseInt(minutes) || 0, device };
+          value = { hours: parseInt(hours) || 0, minutes: parseInt(minutes) || 0, device, category: screenCategory };
           break;
-        case 'sleep':
-          value = { hours: parseInt(hours) || 0, minutes: parseInt(minutes) || 0, quality: sleepQuality };
+        case 'sleep': {
+          const sd = calcDuration(sleepStartH, sleepStartM, sleepStartP, sleepEndH, sleepEndM, sleepEndP);
+          value = { hours: sd.hours, minutes: sd.minutes, quality: sleepQuality, start_time: `${sleepStartH}:${sleepStartM} ${sleepStartP}`, end_time: `${sleepEndH}:${sleepEndM} ${sleepEndP}` };
           break;
-        case 'nap':
-          value = { hours: parseInt(hours) || 0, minutes: parseInt(minutes) || 0, quality: napQuality };
+        }
+        case 'nap': {
+          const nd = calcDuration(napStartH, napStartM, napStartP, napEndH, napEndM, napEndP);
+          value = { hours: nd.hours, minutes: nd.minutes, quality: napQuality, start_time: `${napStartH}:${napStartM} ${napStartP}`, end_time: `${napEndH}:${napEndM} ${napEndP}` };
           break;
+        }
         case 'meal':
           value = {
             meal_type: mealType,
@@ -310,16 +544,22 @@ export default function LogActivityScreen() {
             food_groups: foodGroups,
           };
           break;
-        case 'physical_activity':
+        case 'physical_activity': {
+          const pd = calcDuration(activeStartH, activeStartM, activeStartP, activeEndH, activeEndM, activeEndP);
           value = {
-            hours: parseInt(hours) || 0,
-            minutes: parseInt(minutes) || 0,
+            hours: pd.hours,
+            minutes: pd.minutes,
             activity: physicalType,
+            start_time: `${activeStartH}:${activeStartM} ${activeStartP}`,
+            end_time: `${activeEndH}:${activeEndM} ${activeEndP}`,
           };
           break;
-        case 'education':
-          value = { hours: parseInt(hours) || 0, minutes: parseInt(minutes) || 0, subject };
+        }
+        case 'education': {
+          const ed = calcDuration(learnStartH, learnStartM, learnStartP, learnEndH, learnEndM, learnEndP);
+          value = { hours: ed.hours, minutes: ed.minutes, subject, start_time: `${learnStartH}:${learnStartM} ${learnStartP}`, end_time: `${learnEndH}:${learnEndM} ${learnEndP}` };
           break;
+        }
       }
       if (notes) value.notes = notes;
 
@@ -364,84 +604,10 @@ export default function LogActivityScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="close" size={20} color="#0F172A" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Log Activity</Text>
-        {selectedChild ? (
-          <TouchableOpacity
-            style={styles.headerChild}
-            onPress={() => setShowChildPicker(true)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.headerChildAvatar}>
-              <Text style={styles.headerChildAvatarText}>
-                {selectedChild.name.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <Text style={styles.headerChildText}>{selectedChild.name}</Text>
-            {children.length > 1 && (
-              <Ionicons name="chevron-down" size={14} color="#3B82F6" />
-            )}
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 40 }} />
-        )}
-      </View>
-
-      {/* Child Picker Modal */}
-      <Modal visible={showChildPicker} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowChildPicker(false)}
-        >
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Log for whom?</Text>
-            {children.map((child) => {
-              const isSelected = child.id === selectedChild?.id;
-              return (
-                <TouchableOpacity
-                  key={child.id}
-                  style={[styles.modalItem, isSelected && styles.modalItemActive]}
-                  onPress={() => {
-                    selectChild(child);
-                    setShowChildPicker(false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.modalAvatar, isSelected && styles.modalAvatarActive]}>
-                    <Text style={[styles.modalAvatarText, isSelected && styles.modalAvatarTextActive]}>
-                      {child.name.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                  <Text style={[styles.modalItemText, isSelected && styles.modalItemTextActive]}>
-                    {child.name}
-                  </Text>
-                  {isSelected && <Ionicons name="checkmark-circle" size={20} color="#3B82F6" />}
-                </TouchableOpacity>
-              );
-            })}
-            <TouchableOpacity
-              style={styles.modalAddBtn}
-              onPress={() => {
-                setShowChildPicker(false);
-                router.push('/child/new');
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="add-circle-outline" size={20} color="#3B82F6" />
-              <Text style={styles.modalAddText}>Add another child</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      <ScreenHeader title="Log Activity" icon="create-outline" />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Type Selector */}
-        <Text style={styles.sectionLabel}>What are you logging?</Text>
         <View style={styles.typeGrid}>
           {ACTIVITY_TYPES.map((t) => {
             const isActive = activityType === t.key;
@@ -461,20 +627,72 @@ export default function LogActivityScreen() {
           })}
         </View>
 
-        {/* Duration (screen, sleep, nap, education, physical) */}
-        {activityType !== 'meal' && (
+        {/* Duration — screen_time only (manual hours/minutes) */}
+        {activityType === 'screen_time' && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Duration</Text>
             <DurationInput hours={hours} minutes={minutes} onHoursChange={setHours} onMinutesChange={setMinutes} />
           </View>
         )}
 
+        {/* Time Range — sleep, nap, education, physical */}
+        {activityType === 'sleep' && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Sleep Time</Text>
+            <TimeRangeInput
+              startHour={sleepStartH} startMinute={sleepStartM} startPeriod={sleepStartP}
+              endHour={sleepEndH} endMinute={sleepEndM} endPeriod={sleepEndP}
+              onStartHourChange={setSleepStartH} onStartMinuteChange={setSleepStartM} onStartPeriodChange={setSleepStartP}
+              onEndHourChange={setSleepEndH} onEndMinuteChange={setSleepEndM} onEndPeriodChange={setSleepEndP}
+            />
+          </View>
+        )}
+        {activityType === 'nap' && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Nap Time</Text>
+            <TimeRangeInput
+              startHour={napStartH} startMinute={napStartM} startPeriod={napStartP}
+              endHour={napEndH} endMinute={napEndM} endPeriod={napEndP}
+              onStartHourChange={setNapStartH} onStartMinuteChange={setNapStartM} onStartPeriodChange={setNapStartP}
+              onEndHourChange={setNapEndH} onEndMinuteChange={setNapEndM} onEndPeriodChange={setNapEndP}
+            />
+          </View>
+        )}
+        {activityType === 'education' && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Learning Time</Text>
+            <TimeRangeInput
+              startHour={learnStartH} startMinute={learnStartM} startPeriod={learnStartP}
+              endHour={learnEndH} endMinute={learnEndM} endPeriod={learnEndP}
+              onStartHourChange={setLearnStartH} onStartMinuteChange={setLearnStartM} onStartPeriodChange={setLearnStartP}
+              onEndHourChange={setLearnEndH} onEndMinuteChange={setLearnEndM} onEndPeriodChange={setLearnEndP}
+            />
+          </View>
+        )}
+        {activityType === 'physical_activity' && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Active Time</Text>
+            <TimeRangeInput
+              startHour={activeStartH} startMinute={activeStartM} startPeriod={activeStartP}
+              endHour={activeEndH} endMinute={activeEndM} endPeriod={activeEndP}
+              onStartHourChange={setActiveStartH} onStartMinuteChange={setActiveStartM} onStartPeriodChange={setActiveStartP}
+              onEndHourChange={setActiveEndH} onEndMinuteChange={setActiveEndM} onEndPeriodChange={setActiveEndP}
+            />
+          </View>
+        )}
+
         {/* Screen Time details */}
         {activityType === 'screen_time' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Device</Text>
-            <ChipSelector items={DEVICES} value={device} onChange={setDevice} showIcon />
-          </View>
+          <>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Category</Text>
+              <ChipSelector items={SCREEN_CATEGORIES} value={screenCategory} onChange={setScreenCategory} showIcon />
+            </View>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Device</Text>
+              <ChipSelector items={DEVICES} value={device} onChange={setDevice} showIcon />
+            </View>
+          </>
         )}
 
         {/* Sleep details */}
@@ -564,9 +782,9 @@ export default function LogActivityScreen() {
 
         {!selectedChild && (
           <TouchableOpacity style={styles.noChildHint} onPress={() => router.push('/child/new')} activeOpacity={0.7}>
-            <Ionicons name="information-circle-outline" size={16} color="#3B82F6" />
+            <Ionicons name="information-circle-outline" size={16} color="#FF7F60" />
             <Text style={styles.noChildText}>Add a child profile to start logging</Text>
-            <Ionicons name="chevron-forward" size={14} color="#3B82F6" />
+            <Ionicons name="chevron-forward" size={14} color="#FF7F60" />
           </TouchableOpacity>
         )}
 
@@ -577,68 +795,20 @@ export default function LogActivityScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12,
-    backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E2E8F0',
-  },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '600', color: '#0F172A' },
-  headerChild: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#EFF6FF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
-  },
-  headerChildAvatar: {
-    width: 24, height: 24, borderRadius: 12, backgroundColor: '#3B82F6',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  headerChildAvatarText: { fontSize: 11, fontWeight: '700', color: '#FFFFFF' },
-  headerChildText: { fontSize: 12, fontWeight: '600', color: '#3B82F6' },
-  // Modal
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 32,
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15, shadowRadius: 20, elevation: 10,
-  },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: '#0F172A', marginBottom: 16, textAlign: 'center' },
-  modalItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    padding: 14, borderRadius: 14, backgroundColor: '#F8FAFC',
-    marginBottom: 8, borderWidth: 1.5, borderColor: 'transparent',
-  },
-  modalItemActive: { backgroundColor: '#EFF6FF', borderColor: '#3B82F6' },
-  modalAvatar: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#E2E8F0',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  modalAvatarActive: { backgroundColor: '#3B82F6' },
-  modalAvatarText: { fontSize: 14, fontWeight: '700', color: '#64748B' },
-  modalAvatarTextActive: { color: '#FFFFFF' },
-  modalItemText: { flex: 1, fontSize: 15, fontWeight: '500', color: '#0F172A' },
-  modalItemTextActive: { fontWeight: '600' },
-  modalAddBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    justifyContent: 'center', padding: 14, borderRadius: 14,
-    borderWidth: 1.5, borderColor: '#DBEAFE', borderStyle: 'dashed',
-    marginTop: 4,
-  },
-  modalAddText: { fontSize: 14, fontWeight: '500', color: '#3B82F6' },
+  container: { flex: 1, backgroundColor: '#FEFBF6' },
+
   scrollContent: { padding: 20 },
   sectionLabel: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 12 },
   typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   typeCard: {
     width: '30%', alignItems: 'center', gap: 8,
-    backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 2, borderColor: '#E2E8F0',
+    backgroundColor: '#FFFDFF', borderRadius: 16, borderWidth: 2, borderColor: '#E2E8F0',
     paddingVertical: 14, paddingHorizontal: 8,
   },
   typeIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   typeLabel: { fontSize: 12, fontWeight: '600', color: '#64748B' },
   card: {
-    backgroundColor: '#FFFFFF', borderRadius: 18, padding: 20, marginBottom: 14,
+    backgroundColor: '#FFFDFF', borderRadius: 18, padding: 20, marginBottom: 14,
     borderWidth: 1, borderColor: '#E2E8F0',
   },
   cardTitle: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 12 },
@@ -655,6 +825,24 @@ const styles = StyleSheet.create({
   },
   durationColon: { fontSize: 28, fontWeight: '300', color: '#CBD5E1', marginBottom: 28 },
   durationLabel: { fontSize: 12, color: '#94A3B8', fontWeight: '500' },
+  // Time Range Input
+  timeRangeContainer: { alignItems: 'center', width: '100%' },
+  timeRangeRow: { flexDirection: 'column', alignItems: 'center', gap: 4, width: '100%' },
+  timeRangeArrow: { paddingVertical: 2 },
+  timeBlock: { alignItems: 'center' },
+  timeBlockLabel: { fontSize: 11, fontWeight: '600', color: '#94A3B8', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  timeBlockRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  timeDigitCol: { alignItems: 'center', gap: 3 },
+  timeColon: { fontSize: 24, fontWeight: '300', color: '#CBD5E1', marginBottom: 24 },
+  timePeriodCol: { marginLeft: 3, gap: 3, marginBottom: 28 },
+  periodBtn: {
+    paddingHorizontal: 6, paddingVertical: 5, borderRadius: 6,
+    backgroundColor: '#F1F5F9', borderWidth: 1.5, borderColor: 'transparent',
+  },
+  periodBtnActive: { backgroundColor: '#FFF0ED', borderColor: '#FF7F60' },
+  periodText: { fontSize: 11, fontWeight: '600', color: '#94A3B8' },
+  periodTextActive: { color: '#FF7F60' },
+  durationCalc: { fontSize: 14, fontWeight: '600', color: '#FF7F60', marginTop: 8 },
   // Chips
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
@@ -662,19 +850,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10,
     backgroundColor: '#F1F5F9', borderWidth: 1.5, borderColor: 'transparent',
   },
-  chipActive: { backgroundColor: '#EFF6FF', borderColor: '#3B82F6' },
+  chipActive: { backgroundColor: '#FFF0ED', borderColor: '#FF7F60' },
   chipText: { fontSize: 13, fontWeight: '500', color: '#64748B' },
-  chipTextActive: { color: '#3B82F6' },
+  chipTextActive: { color: '#FF7F60' },
   // Notes
   notesInput: {
-    backgroundColor: '#F8FAFC', borderRadius: 14, fontSize: 14, color: '#0F172A',
+    backgroundColor: '#FEFBF6', borderRadius: 14, fontSize: 14, color: '#0F172A',
     minHeight: 80, padding: 14, borderWidth: 1, borderColor: '#E2E8F0',
   },
   // Button
   logButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: '#3B82F6', borderRadius: 16, height: 56, marginTop: 8,
-    shadowColor: '#3B82F6', shadowOffset: { width: 0, height: 8 },
+    backgroundColor: '#FF7F60', borderRadius: 16, height: 56, marginTop: 8,
+    shadowColor: '#FF7F60', shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25, shadowRadius: 16, elevation: 6,
   },
   logButtonDisabled: { backgroundColor: '#93C5FD', shadowOpacity: 0, elevation: 0 },
@@ -683,9 +871,9 @@ const styles = StyleSheet.create({
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   spinner: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: '#FFFFFF', borderTopColor: 'transparent' },
   noChildHint: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', marginTop: 16, padding: 12 },
-  noChildText: { fontSize: 13, color: '#3B82F6', fontWeight: '500' },
+  noChildText: { fontSize: 13, color: '#FF7F60', fontWeight: '500' },
   // Success
-  successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 24 },
+  successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFDFF', padding: 24 },
   successCheck: { marginBottom: 16 },
   successTitle: { fontSize: 28, fontWeight: '700', color: '#0F172A', marginBottom: 8 },
   successSubtitle: { fontSize: 14, color: '#64748B', textAlign: 'center' },
