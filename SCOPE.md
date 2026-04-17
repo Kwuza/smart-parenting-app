@@ -85,15 +85,15 @@ AI-based child activity monitoring mobile application. Parents log daily activit
 **Payment due:** Upon demonstration of Milestone 1 features working on device
 
 ### Milestone 2 — AI & Polish (₱4,000)
-**Status:** Pending
+**Status:** Done
 **Due:** [Date]
 
-- [ ] AI recommendations screen (OpenRouter integration)
-- [ ] Edge Function for child activity analysis
-- [ ] Recommendation filtering and priority display
-- [ ] Settings screen finalization
-- [ ] UI polish, animations, error handling
-- [ ] Edge case handling (empty states, loading states, error states)
+- [x] AI recommendations screen (OpenRouter integration)
+- [x] Edge Function for child activity analysis
+- [x] Recommendation filtering and priority display
+- [x] Settings screen finalization
+- [x] UI polish, animations, error handling
+- [x] Edge case handling (empty states, loading states, error states)
 
 **Payment due:** Upon demonstration of Milestone 2 features working on device
 
