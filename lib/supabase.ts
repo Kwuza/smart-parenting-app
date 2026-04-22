@@ -21,7 +21,7 @@ export function getSupabase() {
         ? require('@react-native-async-storage/async-storage').default
         : null;
 
-    _supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    _supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
       auth: {
         storage: AsyncStorage || undefined,
         autoRefreshToken: true,

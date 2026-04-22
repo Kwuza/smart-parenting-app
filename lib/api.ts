@@ -35,6 +35,7 @@ export interface Child {
   bmi: number | null;
   // Demographics
   gender: 'male' | 'female' | null;
+  avatar_url: string | null;
   created_at: string;
 }
 
@@ -68,6 +69,7 @@ export interface RoutineData {
   height_cm: number | null;
   weight_kg: number | null;
   gender: 'male' | 'female' | null;
+  bmi: number | null;
 }
 
 export interface Recommendation {
@@ -89,10 +91,10 @@ export async function getChildren() {
   return data as Child[];
 }
 
-export async function createChild(name: string, dateOfBirth: string, userId: string) {
+export async function createChild(name: string, dateOfBirth: string, userId: string, avatarUrl?: string) {
   const { data, error } = await (supabase as any)
     .from('children')
-    .insert({ name, date_of_birth: dateOfBirth, parent_id: userId })
+    .insert({ name, date_of_birth: dateOfBirth, parent_id: userId, avatar_url: avatarUrl ?? null })
     .select()
     .single();
   if (error) throw error;

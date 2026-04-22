@@ -515,7 +515,7 @@ export default function LogActivityScreen() {
     if (!selectedChild) {
       Alert.alert('No child selected', 'Add a child profile first.', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Add Child', onPress: () => router.push('/child/new') },
+        { text: 'Add Child', onPress: () => router.push('/child/wizard' as any) },
       ]);
       return;
     }
@@ -781,7 +781,7 @@ export default function LogActivityScreen() {
         </TouchableOpacity>
 
         {!selectedChild && (
-          <TouchableOpacity style={styles.noChildHint} onPress={() => router.push('/child/new')} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.noChildHint} onPress={() => router.push('/child/wizard' as any)} activeOpacity={0.7}>
             <Ionicons name="information-circle-outline" size={16} color="#FF7F60" />
             <Text style={styles.noChildText}>Add a child profile to start logging</Text>
             <Ionicons name="chevron-forward" size={14} color="#FF7F60" />

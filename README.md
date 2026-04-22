@@ -54,6 +54,9 @@ stores/
 └── auth.ts          # Auth + app state (Zustand)
 ```
 
+2-3 = 11-13 hours
+4-5 = 10-12 hours
+
 ## Database Schema
 
 See `database/schema.sql` for the full schema.

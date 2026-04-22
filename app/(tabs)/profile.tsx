@@ -252,7 +252,7 @@ export default function ProfileScreen() {
             iconColor="#FF7F60"
             label="Add Child Profile"
             description="Monitor a new family member"
-            onPress={() => router.push('/child/new')}
+            onPress={() => router.push('/child/wizard' as any)}
           />
         </Section>
 

@@ -14,6 +14,32 @@ interface Child {
   date_of_birth: string;
   max_screen_time_minutes: number | null;
   min_sleep_minutes: number | null;
+  // New fields from client
+  age_months: number | null;
+  gender: 'male' | 'female' | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  bmi: number | null;
+  bmi_assessment: BmiAssessment | null;
+  // Routine schedule
+  bedtime: string | null;
+  wake_up_time: string | null;
+  breakfast_time: string | null;
+  lunch_time: string | null;
+  snack_time: string | null;
+  dinner_time: string | null;
+  nap_time: string | null;
+  activity_time: string | null;
+  learn_time: string | null;
+}
+
+interface BmiAssessment {
+  bmi: number;
+  zScore: number;
+  percentile: number;
+  category: 'underweight' | 'normal' | 'overweight' | 'obese';
+  label: string;
+  ageMonths: number;
 }
 
 interface Activity {
@@ -30,11 +56,21 @@ interface PreviousRecommendation {
   created_at: string;
 }
 
+interface ScheduledSummary {
+  total: number;
+  completed: number;
+  pending: number;
+  skipped: number;
+  missed: number;
+  byType: [string, { completed: number; pending: number; skipped: number; missed: number }][];
+}
+
 interface RequestBody {
   child_id: string;
   child: Child;
   activities: Activity[];
   previous_recommendations: PreviousRecommendation[];
+  scheduled_summary: ScheduledSummary;
 }
 
 // ──────────────────────────────────────────
@@ -143,47 +179,147 @@ function aggregateActivities(activities: Activity[]) {
 // Prompt Builder
 // ──────────────────────────────────────────
 
-function buildPrompt(child: Child, summary: Record<string, any>, previousRecs: PreviousRecommendation[]): string {
-  const age = child.date_of_birth
-    ? Math.round((Date.now() - new Date(child.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000) * 10) / 10
-    : "unknown";
+function buildPrompt(
+  child: Child,
+  summary: Record<string, any>,
+  previousRecs: PreviousRecommendation[],
+  scheduledSummary: ScheduledSummary
+): string {
+  const ageMonths = child.age_months ?? 0;
+  const ageYears = Math.floor(ageMonths / 12);
+  const ageMonthsRem = ageMonths % 12;
+  const ageDisplay = ageMonths > 0 ? `${ageYears} years ${ageMonthsRem} months` : 'unknown';
+  const gender = child.gender ?? 'unknown';
 
+  // Age-specific developmental context
+  let devContext = '';
+  if (ageMonths <= 36) {
+    devContext = 'TODDLER (1-3 years): Rapid brain development. Prioritize sensory play, outdoor time, and consistent routines. Screen time is highly discouraged — no more than 30 min/day of educational content with a caregiver present. Naps are essential (1-2 per day). Sleep 12-14h total.';
+  } else if (ageMonths <= 72) {
+    devContext = 'PRESCHOOLER (3-6 years): Language explosion, social skills developing. Encourage imaginative play, reading together, and structured physical activity. Screen time should be limited and educational. Sleep 10-13h total. Naps may decrease. Fine motor skills developing.';
+  } else if (ageMonths <= 144) {
+    devContext = 'SCHOOL-AGE (6-12 years): Growing independence, peer relationships matter. Encourage sports, creative activities, and reading. Screen time guidelines: no more than 2h/day recreational. Homework support important. Sleep 9-12h total. No naps typically needed.';
+  }
+
+  // BMI context
+  let bmiSection = '';
+  if (child.bmi_assessment) {
+    const b = child.bmi_assessment;
+    bmiSection = `BMI ASSESSMENT:
+- BMI: ${b.bmi} | Percentile: ${b.percentile}th | Category: ${b.category} (z-score: ${b.zScore})
+- ${b.label}
+- IMPORTANT: For children, BMI MUST be interpreted using age- and gender-specific percentiles, NOT adult BMI standards. The WHO/CDC BMI-for-age growth charts are used.`;
+  } else {
+    bmiSection = 'BMI: No height/weight/gender data available. Recommend collecting during next checkup.';
+  }
+
+  // Routine schedule
+  const routineLines: string[] = [];
+  if (child.bedtime) routineLines.push(`Bedtime: ${child.bedtime}`);
+  if (child.wake_up_time) routineLines.push(`Wake-up: ${child.wake_up_time}`);
+  if (child.breakfast_time) routineLines.push(`Breakfast: ${child.breakfast_time}`);
+  if (child.lunch_time) routineLines.push(`Lunch: ${child.lunch_time}`);
+  if (child.snack_time) routineLines.push(`Snack: ${child.snack_time}`);
+  if (child.dinner_time) routineLines.push(`Dinner: ${child.dinner_time}`);
+  if (child.nap_time) routineLines.push(`Nap: ${child.nap_time}`);
+  if (child.activity_time) routineLines.push(`Activity: ${child.activity_time}`);
+  if (child.learn_time) routineLines.push(`Learning: ${child.learn_time}`);
+  const routineStr = routineLines.length > 0 ? routineLines.join('\n') : 'No routine configured.';
+
+  // Scheduled activity summary
+  const schedLines: string[] = [];
+  if (scheduledSummary.total > 0) {
+    schedLines.push(`Total scheduled: ${scheduledSummary.total}`);
+    schedLines.push(`Completed (logged): ${scheduledSummary.completed}`);
+    schedLines.push(`Skipped: ${scheduledSummary.skipped}`);
+    schedLines.push(`Missed (unlogged): ${scheduledSummary.missed}`);
+    if (scheduledSummary.byType.length > 0) {
+      schedLines.push('By type:');
+      for (const [type, counts] of scheduledSummary.byType) {
+        schedLines.push(`  ${type}: ${counts.completed} done, ${counts.skipped} skipped, ${counts.missed} missed`);
+      }
+    }
+  }
+  const schedStr = schedLines.length > 0 ? schedLines.join('\n') : 'No scheduled activities configured.';
+
+  // Screen time/sleep settings
   const settings: string[] = [];
   if (child.max_screen_time_minutes) settings.push(`Max daily screen time: ${child.max_screen_time_minutes} minutes`);
   if (child.min_sleep_minutes) settings.push(`Min daily sleep: ${child.min_sleep_minutes} minutes (${Math.round(child.min_sleep_minutes / 60 * 10) / 10}h)`);
-  const settingsStr = settings.length > 0 ? settings.join("\n") : "No limits configured.";
+  const settingsStr = settings.length > 0 ? settings.join('\n') : 'No limits configured.';
 
-  let previousSection = "No previous recommendations.";
+  // Previous recommendations
+  let previousSection = 'No previous recommendations.';
   if (previousRecs.length > 0) {
     previousSection = previousRecs.map((r, i) =>
-      `[${i + 1}] (${r.created_at.slice(0, 10)}) [${r.priority}] ${r.content.slice(0, 300)}`
-    ).join("\n\n");
+      `[${i + 1}] (${r.created_at.slice(0, 10)}) [${r.priority}] ${r.content.slice(0, 400)}`
+    ).join('\n\n');
   }
 
+  // Activity summary period
   const periodEnd = new Date().toISOString().slice(0, 10);
-  const periodStart = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const dataPoints = Object.values(summary).reduce((sum: number, v: any) => sum + (v.log_count ?? 0), 0);
+  let analysisPeriod = '28 days';
+  if (dataPoints < 14) analysisPeriod = '14 days (limited data)';
+  if (dataPoints < 7) analysisPeriod = '7 days (very limited data)';
 
-  return `You are a child development advisor providing evidence-based, actionable recommendations to parents.
+  const periodStart = new Date(Date.now() - (dataPoints < 7 ? 7 : dataPoints < 14 ? 14 : 28) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-CHILD PROFILE:
-- Name: ${child.name}
-- Age: ${age} years old
-- Settings: ${settingsStr}
+  return `You are a pediatric child development advisor providing evidence-based, actionable recommendations to parents. Your recommendations should be specific, practical, and age-appropriate.
 
-ACTIVITY SUMMARY (${periodStart} to ${periodEnd}, 4 weeks):
+═══════════════════════════════════════════
+CHILD PROFILE
+═══════════════════════════════════════════
+Name: ${child.name}
+Age: ${ageDisplay} (${ageMonths} months)
+Gender: ${gender}
+
+${bmiSection}
+
+═══════════════════════════════════════════
+DEVELOPMENTAL CONTEXT
+═══════════════════════════════════════════
+${devContext}
+
+═══════════════════════════════════════════
+ROUTINE SCHEDULE
+═══════════════════════════════════════════
+${routineStr}
+
+═══════════════════════════════════════════
+ACTIVITY SETTINGS
+═══════════════════════════════════════════
+${settingsStr}
+
+═══════════════════════════════════════════
+SCHEDULED ACTIVITY TRACKING (last 30 days)
+═══════════════════════════════════════════
+${schedStr}
+NOTE: "Missed" activities mean a schedule was created but the child did not log it. This could indicate the child was distracted, the parent forgot, or the activity didn't happen. Consider this in recommendations.
+
+═══════════════════════════════════════════
+ACTIVITY SUMMARY (${periodStart} to ${periodEnd}, ${analysisPeriod})
+═══════════════════════════════════════════
 ${JSON.stringify(summary, null, 2)}
 
-PREVIOUS RECOMMENDATIONS:
+═══════════════════════════════════════════
+PREVIOUS RECOMMENDATIONS (last ${previousRecs.length})
+═══════════════════════════════════════════
 ${previousSection}
 
-INSTRUCTIONS:
-- Provide 1-3 specific, actionable recommendations based on the activity data.
-- If the child has configured limits (screen time, sleep), reference whether they are being met.
-- If previous recommendations exist, acknowledge them and note any improvements or continued concerns.
-- Categorize each recommendation: screen_time, sleep, nutrition, activity, or general.
-- Assign priority: high (concerning pattern), medium (room for improvement), low (positive reinforcement).
-- Keep each recommendation to 2-4 sentences. Be direct and specific.
-- Do not repeat advice from previous recommendations unless the pattern has not improved.
+═══════════════════════════════════════════
+INSTRUCTIONS
+═══════════════════════════════════════════
+1. Provide 1-3 specific, actionable recommendations based on ALL available data above.
+2. Consider the child's age group, gender, BMI percentile, and developmental stage.
+3. If the child has configured limits (screen time, sleep), reference whether they are being met.
+4. If the child missed scheduled activities, suggest ways to improve adherence or adjust the schedule.
+5. If previous recommendations exist, acknowledge them and note any improvements or continued concerns.
+6. Do NOT repeat advice from previous recommendations unless the pattern has not improved.
+7. If BMI data exists, reference the category (underweight/normal/overweight/obese) with age-appropriate context.
+8. Each recommendation: 2-4 sentences. Be direct, specific, and practical.
+9. Categorize each: screen_time, sleep, nutrition, activity, or general.
+10. Priority: high (concerning pattern), medium (room for improvement), low (positive reinforcement).
 
 Respond in this JSON format:
 {
@@ -216,7 +352,7 @@ Deno.serve(async (req: Request) => {
   try {
     // Parse request
     const body: RequestBody = await req.json();
-    const { child_id, child, activities, previous_recommendations } = body;
+    const { child_id, child, activities, previous_recommendations, scheduled_summary } = body;
 
     if (!child_id || !child || !activities) {
       return new Response(JSON.stringify({ error: "Missing required fields: child_id, child, activities" }), {
@@ -228,8 +364,8 @@ Deno.serve(async (req: Request) => {
     // Aggregate activities
     const summary = aggregateActivities(activities);
 
-    // Build prompt
-    const prompt = buildPrompt(child, summary, previous_recommendations || []);
+    // Build prompt with all available context
+    const prompt = buildPrompt(child, summary, previous_recommendations || [], scheduled_summary || { total: 0, completed: 0, pending: 0, skipped: 0, missed: 0, byType: [] });
 
     // Call OpenRouter
     const openrouterRes = await fetch(OPENROUTER_URL, {
@@ -242,7 +378,7 @@ Deno.serve(async (req: Request) => {
         model: MODEL,
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
-        max_tokens: 1024,
+        max_tokens: 2048,
       }),
     });
 
@@ -282,6 +418,9 @@ Deno.serve(async (req: Request) => {
         max_screen_time_minutes: child.max_screen_time_minutes,
         min_sleep_minutes: child.min_sleep_minutes,
       },
+      bmi_category: child.bmi_assessment?.category ?? null,
+      age_months: child.age_months ?? null,
+      scheduled_summary: scheduled_summary || null,
       model: MODEL,
     };
 

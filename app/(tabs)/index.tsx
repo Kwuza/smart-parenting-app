@@ -254,7 +254,7 @@ export default function DashboardScreen() {
         <View style={styles.childrenSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Children</Text>
-            <TouchableOpacity onPress={() => router.push('/child/new')}>
+            <TouchableOpacity onPress={() => router.push('/child/wizard' as any)}>
               <Text style={styles.sectionLink}>+ Add</Text>
             </TouchableOpacity>
           </View>
@@ -296,7 +296,7 @@ export default function DashboardScreen() {
               {/* Add child button */}
               <TouchableOpacity
                 style={styles.addChildChip}
-                onPress={() => router.push('/child/new')}
+                onPress={() => router.push('/child/wizard' as any)}
                 activeOpacity={0.7}
               >
                 <View style={styles.addChildChipIcon}>
@@ -309,7 +309,7 @@ export default function DashboardScreen() {
             <TouchableOpacity
               style={styles.addChildBanner}
               activeOpacity={0.7}
-              onPress={() => router.push('/child/new')}
+              onPress={() => router.push('/child/wizard' as any)}
             >
               <View style={styles.addChildIcon}>
                 <Ionicons name="add" size={24} color="#FF7F60" />
