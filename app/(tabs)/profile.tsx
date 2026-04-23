@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Switch, Modal, Animated, Alert } from 'react-native';
-import { Text, TextInput } from 'react-native-paper';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { View, ScrollView, StyleSheet, TouchableOpacity, Switch, Modal, Animated, RefreshControl } from 'react-native';
+import { Text, ActivityIndicator } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth, useApp } from '../../stores/auth';
-import { updateChildSettings, Child } from '../../lib/api';
+import { scheduleChildNotifications, cancelChildNotifications } from '../../lib/notifications';
+import { Child } from '../../lib/api';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -73,44 +74,25 @@ function ChildCard({
         <Text style={styles.childName}>{name}</Text>
         <Text style={styles.childAge}>{age !== null ? `${age} years old` : 'Age not set'}</Text>
       </View>
-      <Ionicons name="create-outline" size={18} color="#94A3B8" />
+      <Ionicons name="chevron-forward" size={16} color="#CBD5E1" />
     </TouchableOpacity>
   );
 }
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
-  const { children } = useApp();
+  const { children, loadChildren } = useApp();
   const router = useRouter();
-  const [notifEnabled, setNotifEnabled] = useState(true);
-  const [weeklyReport, setWeeklyReport] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [allNotificationsDisabled, setAllNotificationsDisabled] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showGoodbye, setShowGoodbye] = useState(false);
   const goodbyeOpacity = useRef(new Animated.Value(0)).current;
   const goodbyeScale = useRef(new Animated.Value(0.8)).current;
 
-  // Child settings edit modal
-  const [editChild, setEditChild] = useState<Child | null>(null);
-  const [editMaxScreen, setEditMaxScreen] = useState<number | null>(null);
-  const [editMinSleep, setEditMinSleep] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const SCREEN_LIMITS = [
-    { label: 'No limit', value: null },
-    { label: '30 min', value: 30 },
-    { label: '1 hour', value: 60 },
-    { label: '1.5 hours', value: 90 },
-    { label: '2 hours', value: 120 },
-    { label: '3 hours', value: 180 },
-  ];
-  const SLEEP_MINS = [
-    { label: 'No minimum', value: null },
-    { label: '8 hours', value: 480 },
-    { label: '9 hours', value: 540 },
-    { label: '10 hours', value: 600 },
-    { label: '11 hours', value: 660 },
-    { label: '12 hours', value: 720 },
-  ];
+  const childColors = ['#FF7F60', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899'];
 
   const userName = user?.user_metadata?.name || 'Parent';
   const userEmail = user?.email || '';
@@ -121,31 +103,53 @@ export default function ProfileScreen() {
     .toUpperCase()
     .slice(0, 2);
 
-  const childColors = ['#FF7F60', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899'];
+  // Initial load
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        await loadChildren();
+      } catch (e: any) {
+        if (mounted) setError(e?.message || 'Failed to load children');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  // Pull-to-refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadChildren();
+      setError('');
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load children');
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  // Handle global "All Notifications" toggle
+  useEffect(() => {
+    if (!children.length) return;
+    const apply = async () => {
+      try {
+        if (allNotificationsDisabled) {
+          await Promise.all(children.map(c => cancelChildNotifications(c.id)));
+        } else {
+          await Promise.all(children.map(c => scheduleChildNotifications(c as Child)));
+        }
+      } catch (e: any) {
+        setError(e?.message || 'Failed to update notifications');
+      }
+    };
+    apply();
+  }, [allNotificationsDisabled]);
 
   const openChildSettings = (child: Child) => {
-    setEditChild(child);
-    setEditMaxScreen(child.max_screen_time_minutes);
-    setEditMinSleep(child.min_sleep_minutes);
-  };
-
-  const handleSaveChildSettings = async () => {
-    if (!editChild) return;
-    setSaving(true);
-    try {
-      await updateChildSettings(editChild.id, {
-        max_screen_time_minutes: editMaxScreen,
-        min_sleep_minutes: editMinSleep,
-      });
-      // Refresh children in store
-      const { loadChildren } = useApp.getState();
-      await loadChildren();
-      setEditChild(null);
-    } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to save settings');
-    } finally {
-      setSaving(false);
-    }
+    router.push(`/settings/child/${child.id}`);
   };
 
   const handleSignOut = async () => {
@@ -164,7 +168,6 @@ export default function ProfileScreen() {
         useNativeDriver: true,
       }),
     ]).start(() => {
-      // After showing, fade out then sign out
       setTimeout(() => {
         Animated.timing(goodbyeOpacity, {
           toValue: 0,
@@ -180,6 +183,20 @@ export default function ProfileScreen() {
     });
   };
 
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Settings</Text>
+        </View>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color="#FF7F60" />
+          <Text style={styles.loadingText}>Loading…</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -187,7 +204,26 @@ export default function ProfileScreen() {
         <Text style={styles.headerTitle}>Settings</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      {error ? (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>{error}</Text>
+          <TouchableOpacity onPress={() => setError('')} hitSlop={8}>
+            <Ionicons name="close" size={16} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#FF7F60"
+          />
+        }
+      >
         {/* Parent Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.profileAvatar}>
@@ -197,7 +233,7 @@ export default function ProfileScreen() {
             <Text style={styles.profileName}>{userName}</Text>
             <Text style={styles.profileEmail}>{userEmail}</Text>
           </View>
-          <TouchableOpacity style={styles.profileEditBtn} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.profileEditBtn} activeOpacity={0.7} onPress={() => router.push('/settings/edit-profile')}>
             <Ionicons name="pencil" size={16} color="#FF7F60" />
           </TouchableOpacity>
         </View>
@@ -206,105 +242,97 @@ export default function ProfileScreen() {
         <Section title="Account">
           <Item
             icon="person-outline"
-            iconBg='#FFF0ED'
+            iconBg="#FFF0ED"
             iconColor="#FF7F60"
             label="Edit Profile"
             description="Update your name and photo"
+            onPress={() => router.push('/settings/edit-profile')}
           />
           <Item
             icon="mail-outline"
-            iconBg='#FFF0ED'
+            iconBg="#FFF0ED"
             iconColor="#FF7F60"
             label="Email"
             description={userEmail}
+            onPress={() => router.push('/settings/change-email')}
           />
           <Item
             icon="lock-closed-outline"
-            iconBg='#FFF0ED'
+            iconBg="#FFF0ED"
             iconColor="#FF7F60"
             label="Change Password"
             description="Update your account password"
+            onPress={() => router.push('/settings/change-password')}
           />
         </Section>
 
         {/* Children */}
         <Section title="Children">
-          {children.map((child, i) => {
-            const age = child.date_of_birth
-              ? Math.floor(
-                  (Date.now() - new Date(child.date_of_birth).getTime()) /
-                    (365.25 * 24 * 60 * 60 * 1000)
-                )
-              : null;
-            return (
-              <ChildCard
-                key={child.id}
-                name={child.name}
-                age={age}
-                color={childColors[i % childColors.length]}
-                onEdit={() => openChildSettings(child)}
+          {children.length === 0 ? (
+            <View style={styles.emptyStateCard}>
+              <View style={styles.emptyStateInner}>
+                <View style={styles.emptyIconCircle}>
+                  <Ionicons name="add-circle-outline" size={48} color="#94A3B8" />
+                </View>
+                <Text style={styles.emptyTitle}>No children yet</Text>
+                <Text style={styles.emptySubtitle}>Add your first child profile to start tracking</Text>
+                <TouchableOpacity
+                  style={styles.emptyCtaBtn}
+                  onPress={() => router.push('/child/wizard' as any)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.emptyCtaText}>Add Child</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <>
+              {children.map((child, i) => {
+                const age = child.date_of_birth
+                  ? Math.floor(
+                      (Date.now() - new Date(child.date_of_birth).getTime()) /
+                        (365.25 * 24 * 60 * 60 * 1000)
+                    )
+                  : null;
+                return (
+                  <ChildCard
+                    key={child.id}
+                    name={child.name}
+                    age={age}
+                    color={childColors[i % childColors.length]}
+                    onEdit={() => openChildSettings(child)}
+                  />
+                );
+              })}
+              <Item
+                icon="add-circle-outline"
+                iconBg="#FFF0ED"
+                iconColor="#FF7F60"
+                label="Add Child Profile"
+                description="Monitor a new family member"
+                onPress={() => router.push('/child/wizard' as any)}
               />
-            );
-          })}
-          <Item
-            icon="add-circle-outline"
-            iconBg='#FFF0ED'
-            iconColor="#FF7F60"
-            label="Add Child Profile"
-            description="Monitor a new family member"
-            onPress={() => router.push('/child/wizard' as any)}
-          />
+            </>
+          )}
         </Section>
 
         {/* Notifications */}
         <Section title="Notifications">
           <Item
-            icon="notifications-outline"
+            icon="notifications-off-outline"
             iconBg="#FFFBEB"
             iconColor="#F59E0B"
-            label="Push Notifications"
-            description="Activity reminders and alerts"
+            label="All Notifications"
+            description="Turn off all child activity alerts"
             trailing={
               <Switch
-                value={notifEnabled}
-                onValueChange={setNotifEnabled}
+                value={allNotificationsDisabled}
+                onValueChange={setAllNotificationsDisabled}
                 trackColor={{ false: '#E2E8F0', true: '#93C5FD' }}
-                thumbColor={notifEnabled ? '#FF7F60' : '#F1F5F9'}
+                thumbColor={allNotificationsDisabled ? '#FF7F60' : '#F1F5F9'}
               />
             }
-          />
-          <Item
-            icon="document-text-outline"
-            iconBg="#F5F3FF"
-            iconColor="#8B5CF6"
-            label="Weekly Summary"
-            description="Get a report every Sunday"
-            trailing={
-              <Switch
-                value={weeklyReport}
-                onValueChange={setWeeklyReport}
-                trackColor={{ false: '#E2E8F0', true: '#93C5FD' }}
-                thumbColor={weeklyReport ? '#FF7F60' : '#F1F5F9'}
-              />
-            }
-          />
-        </Section>
-
-        {/* Privacy & Security */}
-        <Section title="Privacy & Security">
-          <Item
-            icon="shield-checkmark-outline"
-            iconBg="#ECFDF5"
-            iconColor="#10B981"
-            label="Privacy Settings"
-            description="Data sharing and permissions"
-          />
-          <Item
-            icon="finger-print-outline"
-            iconBg="#ECFDF5"
-            iconColor="#10B981"
-            label="Biometric Login"
-            description="Use Face ID or fingerprint"
           />
         </Section>
 
@@ -316,6 +344,7 @@ export default function ProfileScreen() {
             iconColor="#8B5CF6"
             label="Help & FAQ"
             description="Common questions answered"
+            onPress={() => router.push('/settings/help')}
           />
         </Section>
 
@@ -330,62 +359,6 @@ export default function ProfileScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
-
-      {/* Child Settings Edit Modal */}
-      <Modal visible={!!editChild} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setEditChild(null)}>
-          <View style={styles.childSettingsModal}>
-            <View style={styles.childSettingsHeader}>
-              <Ionicons name="settings-outline" size={24} color="#FF7F60" />
-              <Text style={styles.childSettingsTitle}>{editChild?.name}'s Settings</Text>
-            </View>
-
-            {/* Max Screen Time */}
-            <Text style={styles.childSettingsLabel}>Max daily screen time</Text>
-            <View style={styles.presetGrid}>
-              {SCREEN_LIMITS.map((opt) => (
-                <TouchableOpacity
-                  key={opt.label}
-                  style={[styles.presetChip, editMaxScreen === opt.value && styles.presetChipActive]}
-                  onPress={() => setEditMaxScreen(opt.value)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.presetChipText, editMaxScreen === opt.value && styles.presetChipTextActive]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Min Sleep */}
-            <Text style={styles.childSettingsLabel}>Minimum sleep time</Text>
-            <View style={styles.presetGrid}>
-              {SLEEP_MINS.map((opt) => (
-                <TouchableOpacity
-                  key={opt.label}
-                  style={[styles.presetChip, editMinSleep === opt.value && styles.presetChipActive]}
-                  onPress={() => setEditMinSleep(opt.value)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.presetChipText, editMinSleep === opt.value && styles.presetChipTextActive]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Buttons */}
-            <View style={styles.childSettingsButtons}>
-              <TouchableOpacity style={styles.childSettingsCancel} onPress={() => setEditChild(null)} activeOpacity={0.7}>
-                <Text style={styles.childSettingsCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.childSettingsSave} onPress={handleSaveChildSettings} activeOpacity={0.7} disabled={saving}>
-                <Text style={styles.childSettingsSaveText}>{saving ? 'Saving...' : 'Save'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       {/* Sign Out Confirmation Modal */}
       <Modal visible={showSignOutConfirm} transparent animationType="fade">
@@ -597,11 +570,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
   },
-  confirmCancelText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#64748B',
-  },
+  confirmCancelText: { fontSize: 15, fontWeight: '600', color: '#64748B' },
   confirmSignOut: {
     flex: 1,
     paddingVertical: 14,
@@ -609,21 +578,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
     alignItems: 'center',
   },
-  confirmSignOutText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  // Goodbye animation
+  confirmSignOutText: { fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
+  // Goodbye overlay
   goodbyeOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#FFFDFF',
+    backgroundColor: 'rgba(255,255,255,0.98)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 100,
   },
   goodbyeContent: {
     alignItems: 'center',
+    padding: 40,
   },
   goodbyeTitle: {
     fontSize: 28,
@@ -634,96 +599,88 @@ const styles = StyleSheet.create({
   goodbyeSubtitle: {
     fontSize: 16,
     color: '#64748B',
+    textAlign: 'center',
   },
-  // Child Settings Modal
-  childSettingsModal: {
-    backgroundColor: '#FFFDFF',
-    borderRadius: 24,
-    padding: 24,
-    width: '100%',
-    maxWidth: 360,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
+  // Loading state
+  centerState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEFBF6',
   },
-  childSettingsHeader: {
+  loadingText: {
+    fontSize: 14,
+    color: '#94A3B8',
+    marginTop: 12,
+  },
+  // Error banner
+  errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 4,
+    gap: 8,
   },
-  childSettingsTitle: {
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#EF4444',
+    fontWeight: '500',
+  },
+  // Empty state
+  emptyStateCard: {
+    backgroundColor: '#FFFDFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 20,
+    marginTop: 8,
+  },
+  emptyStateInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#0F172A',
+    marginBottom: 6,
   },
-  childSettingsLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-    marginBottom: 10,
-    marginTop: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  presetGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 20,
     marginBottom: 16,
   },
-  presetChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-  },
-  presetChipActive: {
-    backgroundColor: '#FFF0ED',
-    borderColor: '#FF7F60',
-  },
-  presetChipText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#64748B',
-  },
-  presetChipTextActive: {
-    color: '#FF7F60',
-  },
-  childSettingsButtons: {
+  emptyCtaBtn: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  childSettingsCancel: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: '#F1F5F9',
-  },
-  childSettingsCancelText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  childSettingsSave: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
+    gap: 8,
     backgroundColor: '#FF7F60',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 14,
   },
-  childSettingsSaveText: {
+  emptyCtaText: {
     fontSize: 15,
     fontWeight: '600',
     color: '#FFFFFF',

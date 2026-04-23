@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { PaperProvider, MD3LightTheme } from 'react-native-paper';
 import { StatusBar } from 'expo-status-bar';
-import { useAuth } from '../stores/auth';
+import { useAuth, useApp } from '../stores/auth';
 import { View, ActivityIndicator } from 'react-native';
 import { initNotifications } from '../lib/notifications';
 import * as Notifications from 'expo-notifications';
@@ -37,9 +37,20 @@ const theme = {
 
 export default function RootLayout() {
   const { user, loading, loadSession } = useAuth();
+  useApp();
   const segments = useSegments();
   const router = useRouter();
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Determine which tab to navigate to based on notification type
+  const getNotificationRoute = (type: string): string => {
+    const t = type.toLowerCase();
+    if (['bedtime', 'wake', 'nap', 'sleep'].some(k => t.includes(k))) return '/(tabs)/log';
+    if (['meal', 'breakfast', 'lunch', 'dinner', 'snack'].some(k => t.includes(k))) return '/(tabs)/log';
+    if (['activity', 'learn', 'education'].some(k => t.includes(k))) return '/(tabs)/log';
+    if (['growth', 'weekly'].some(k => t.includes(k))) return '/(tabs)/profile';
+    return '/(tabs)';
+  };
 
   useEffect(() => {
     loadSession();
@@ -47,9 +58,24 @@ export default function RootLayout() {
 
     // Handle notification taps
     const sub = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data;
+      const data = response.notification.request.content.data as { notificationId?: string; childId?: string; type?: string };
       if (data?.childId) {
-        // Could navigate to log screen for this child
+        // Select the matching child — read fresh from store to avoid stale closure
+        const currentChildren = useApp.getState().children;
+        const matchingChild = currentChildren.find(c => c.id === data.childId);
+        if (matchingChild) {
+          useApp.getState().selectChild(matchingChild);
+        }
+
+        // Navigate to the appropriate tab after a short delay to ensure auth is ready
+        const route = data.type ? getNotificationRoute(data.type) : '/(tabs)';
+        setTimeout(() => {
+          try {
+            router.replace(route as any);
+          } catch (e) {
+            console.warn('Navigation from notification failed:', e);
+          }
+        }, 500);
       }
     });
     return () => sub.remove();
@@ -86,12 +112,11 @@ export default function RootLayout() {
 
   return (
     <PaperProvider theme={theme}>
-      <StatusBar style="auto" />
+      <StatusBar style="auto" hidden />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="child/new" options={{ title: 'Add Child' }} />
-        <Stack.Screen name="child/routine" options={{ title: 'Set Routine' }} />
+        <Stack.Screen name="child/wizard" options={{ title: 'Add Child' }} />
       </Stack>
     </PaperProvider>
   );
