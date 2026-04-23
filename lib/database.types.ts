@@ -105,6 +105,7 @@ export type Database = {
           max_screen_time_minutes: number | null
           min_sleep_minutes: number | null
           name: string
+          notifications: Json | null
           nap_time: string | null
           parent_id: string
           snack_time: string | null
@@ -130,6 +131,7 @@ export type Database = {
           max_screen_time_minutes?: number | null
           min_sleep_minutes?: number | null
           name: string
+          notifications?: Json | null
           nap_time?: string | null
           parent_id: string
           snack_time?: string | null
@@ -155,6 +157,7 @@ export type Database = {
           max_screen_time_minutes?: number | null
           min_sleep_minutes?: number | null
           name?: string
+          notifications?: Json | null
           nap_time?: string | null
           parent_id?: string
           snack_time?: string | null

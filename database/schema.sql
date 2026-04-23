@@ -8,6 +8,9 @@
 -- - Composite indexes for common queries
 -- - Alerts: UPDATE policy for acknowledge
 -- - Recommendations: UPDATE/DELETE policies
+--
+-- Migrations (in /migrations folder):
+-- - 001_add_insight_type_and_trend.sql
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
