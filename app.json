@@ -24,7 +24,8 @@
       "expo-router",
       "expo-asset",
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      "@react-native-community/datetimepicker"
     ],
     "scheme": "smart-parenting-app",
     "experiments": {

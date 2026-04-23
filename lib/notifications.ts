@@ -13,8 +13,7 @@
 
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
-import { Child, getAgeGroup } from './api';
+import { Child, ScheduledActivity, getScheduledActivities } from './api';
 
 // Show notification even when app is in foreground
 Notifications.setNotificationHandler({
@@ -105,22 +104,213 @@ function offsetTime(hour: number, minute: number, offsetMinutes: number): { hour
   };
 }
 
+function getActivityReminderLabel(activity: ScheduledActivity): string {
+  switch (activity.type) {
+    case 'screen_time':
+      return 'screen time';
+    case 'sleep':
+      return 'sleep';
+    case 'nap':
+      return 'nap';
+    case 'meal':
+      return activity.meal_type || 'meal';
+    case 'physical_activity':
+      return activity.category || 'activity';
+    case 'education':
+      return activity.category || 'learning time';
+    default:
+      return 'activity';
+  }
+}
+
+async function scheduleOneTime(
+  id: string,
+  childId: string,
+  type: string,
+  triggerDate: Date,
+  title: string,
+  body: string,
+  extraData?: Record<string, any>
+): Promise<string | null> {
+  if (triggerDate.getTime() <= Date.now()) return null;
+
+  try {
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: 'default',
+        data: { notificationId: id, childId, type, ...extraData },
+      },
+      trigger: triggerDate as any,
+    });
+    return identifier;
+  } catch (e) {
+    console.error(`Failed to schedule ${id}:`, e);
+    return null;
+  }
+}
+
+async function getScheduledNotificationIdentifiersByChild(childId: string): Promise<string[]> {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    return scheduled
+      .filter((notif: any) => notif.content?.data?.childId === childId)
+      .map((notif: any) => notif.identifier);
+  } catch {
+    return [];
+  }
+}
+
+async function getScheduledNotificationIdentifiersBySchedule(scheduleId: string): Promise<string[]> {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    return scheduled
+      .filter((notif: any) => notif.content?.data?.scheduleId === scheduleId)
+      .map((notif: any) => notif.identifier);
+  } catch {
+    return [];
+  }
+}
+
+export async function cancelScheduledActivityNotifications(scheduleId: string): Promise<void> {
+  const identifiers = await getScheduledNotificationIdentifiersBySchedule(scheduleId);
+  for (const identifier of identifiers) {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(identifier);
+    } catch {}
+  }
+  scheduledNotifications = scheduledNotifications.filter(n => !(n.id.startsWith('scheduled-') && n.id.includes(scheduleId)));
+}
+
+export async function scheduleScheduledActivityNotifications(
+  activity: ScheduledActivity,
+  childName: string
+): Promise<void> {
+  await cancelScheduledActivityNotifications(activity.id);
+
+  if (activity.status !== 'pending') return;
+
+  const start = new Date(activity.start_time);
+  const label = getActivityReminderLabel(activity);
+  const minMinutes = activity.min_duration_minutes;
+  const maxMinutes = activity.max_duration_minutes;
+
+  const minTrigger =
+    minMinutes != null
+      ? new Date(start.getTime() + Math.max(0, minMinutes - 5) * 60000)
+      : null;
+
+  const maxTrigger =
+    maxMinutes != null
+      ? new Date(start.getTime() + Math.max(0, maxMinutes - 5) * 60000)
+      : null;
+
+  if (minTrigger && maxTrigger && minTrigger.getTime() === maxTrigger.getTime()) {
+    const id = `scheduled-max-${activity.id}`;
+    const identifier = await scheduleOneTime(
+      id,
+      activity.child_id,
+      activity.type,
+      maxTrigger,
+      `${childName}'s ${label} ends soon ⏰`,
+      `5 minutes left before the scheduled ${label} maximum time ends.`,
+      { scheduleId: activity.id, reminderStage: 'max' }
+    );
+    if (identifier) {
+      scheduledNotifications.push({
+        id,
+        identifier,
+        childId: activity.child_id,
+        type: activity.type,
+        hour: maxTrigger.getHours(),
+        minute: maxTrigger.getMinutes(),
+      });
+    }
+    return;
+  }
+
+  if (minTrigger) {
+    const id = `scheduled-min-${activity.id}`;
+    const identifier = await scheduleOneTime(
+      id,
+      activity.child_id,
+      activity.type,
+      minTrigger,
+      `${childName}'s ${label} check-in ⏳`,
+      `5 minutes until the scheduled minimum time for ${label}.`,
+      { scheduleId: activity.id, reminderStage: 'min' }
+    );
+    if (identifier) {
+      scheduledNotifications.push({
+        id,
+        identifier,
+        childId: activity.child_id,
+        type: activity.type,
+        hour: minTrigger.getHours(),
+        minute: minTrigger.getMinutes(),
+      });
+    }
+  }
+
+  if (maxTrigger) {
+    const id = `scheduled-max-${activity.id}`;
+    const identifier = await scheduleOneTime(
+      id,
+      activity.child_id,
+      activity.type,
+      maxTrigger,
+      `${childName}'s ${label} ends soon ⏰`,
+      `5 minutes left before the scheduled ${label} maximum time ends.`,
+      { scheduleId: activity.id, reminderStage: 'max' }
+    );
+    if (identifier) {
+      scheduledNotifications.push({
+        id,
+        identifier,
+        childId: activity.child_id,
+        type: activity.type,
+        hour: maxTrigger.getHours(),
+        minute: maxTrigger.getMinutes(),
+      });
+    }
+  }
+}
+
+async function schedulePendingScheduledActivityNotifications(child: Child): Promise<void> {
+  try {
+    const activities = await getScheduledActivities(child.id, 'pending');
+    for (const activity of activities) {
+      await scheduleScheduledActivityNotifications(activity, child.name);
+    }
+  } catch (e) {
+    console.error(`Failed to sync scheduled activity reminders for ${child.name}:`, e);
+  }
+}
+
 // --- High-level API ---
 
 /**
  * Schedule all notifications for a single child based on their routine.
  * Cancels existing notifications for this child first.
  */
-export async function scheduleChildNotifications(child: Child): Promise<void> {
+export async function scheduleChildNotifications(
+  child: Child,
+  notifToggles?: Record<string, boolean>
+): Promise<void> {
   const granted = await requestNotificationPermission();
   if (!granted) return;
 
-  // Cancel existing notifications for this child
+  // Cancel existing notifications for this child first
   await cancelChildNotifications(child.id);
 
   const name = child.name;
-  const ageGroup = getAgeGroup(child.date_of_birth);
-  const tasks: Promise<void>[] = [];
+
+  const isEnabled = (key: string): boolean => {
+    // If notifToggles is provided, use it; otherwise default to enabled
+    if (notifToggles === undefined) return true;
+    return notifToggles[key] ?? true;
+  };
 
   const addNotif = async (
     type: string,
@@ -129,6 +319,7 @@ export async function scheduleChildNotifications(child: Child): Promise<void> {
     bodyFn: (n: string) => string,
     offsetMinutes = 0
   ) => {
+    if (!isEnabled(type)) return; // Skip if this notification type is disabled
     const parsed = parseTime(timeStr);
     if (!parsed) return;
     const adjusted = offsetTime(parsed.hour, parsed.minute, offsetMinutes);
@@ -147,7 +338,7 @@ export async function scheduleChildNotifications(child: Child): Promise<void> {
   await addNotif('bedtime', child.bedtime,
     (n) => `Bedtime for ${n} 🌙`,
     (n) => `It's almost ${n}'s bedtime. Time to start winding down!`,
-    -30 // 30 min before
+    -30
   );
 
   await addNotif('wake_up', child.wake_up_time,
@@ -176,7 +367,7 @@ export async function scheduleChildNotifications(child: Child): Promise<void> {
     (n) => `Time for ${n}'s dinner. Log what they had!`
   );
 
-  // Activities (skip for 6+ if not set)
+  // Activities
   await addNotif('nap', child.nap_time,
     (n) => `Nap time for ${n} 😴`,
     (n) => `${n}'s scheduled nap time. Sweet dreams!`
@@ -192,19 +383,92 @@ export async function scheduleChildNotifications(child: Child): Promise<void> {
     (n) => `${n}'s scheduled learning time. Happy studying!`
   );
 
+  // Weekly growth check reminder
+  if (isEnabled('weekly_growth')) {
+    await scheduleWeeklyGrowthReminder(child, true);
+  }
+
+  // One-off reminders for pending scheduled activities (5 min before min/max duration)
+  await schedulePendingScheduledActivityNotifications(child);
+
   console.log(`Scheduled ${scheduledNotifications.filter(n => n.childId === child.id).length} notifications for ${name}`);
+}
+
+/**
+ * Schedule a weekly growth check reminder for a child.
+ * Fires every Sunday at 9:00 AM by default.
+ */
+export async function scheduleWeeklyGrowthReminder(
+  child: Child,
+  enabled: boolean
+): Promise<void> {
+  const id = `weekly-growth-${child.id}`;
+
+  // Cancel any existing weekly growth reminder first
+  await cancelWeeklyGrowthReminder(child.id);
+
+  if (!enabled) return;
+
+  const granted = await requestNotificationPermission();
+  if (!granted) return;
+
+  try {
+    const identifier = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `📏 Weekly Growth Check for ${child.name}!`,
+        body: `Time to record ${child.name}'s weight and height for accurate BMI tracking.`,
+        sound: 'default',
+        data: { notificationId: id, childId: child.id, type: 'weekly_growth' },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+        weekday: 1, // Monday (1=Sunday, 2=Monday, ..., 7=Saturday)
+        hour: 9,
+        minute: 0,
+      },
+    });
+
+    scheduledNotifications.push({
+      id,
+      identifier,
+      childId: child.id,
+      type: 'weekly_growth',
+      hour: 9,
+      minute: 0,
+    });
+
+    console.log(`Scheduled weekly growth reminder for ${child.name}`);
+  } catch (e) {
+    console.error(`Failed to schedule weekly growth reminder:`, e);
+  }
+}
+
+/**
+ * Cancel the weekly growth reminder for a specific child.
+ */
+export async function cancelWeeklyGrowthReminder(childId: string): Promise<void> {
+  const id = `weekly-growth-${childId}`;
+  const existing = scheduledNotifications.find(n => n.id === id);
+  if (existing) {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(existing.identifier);
+    } catch {}
+  }
+  scheduledNotifications = scheduledNotifications.filter(n => n.id !== id);
 }
 
 /**
  * Cancel all notifications for a specific child.
  */
 export async function cancelChildNotifications(childId: string) {
-  const childNotifs = scheduledNotifications.filter(n => n.childId === childId);
-  for (const notif of childNotifs) {
+  // Cancel all OS-level scheduled notifications for this child (routine + weekly + scheduled activities)
+  const identifiers = await getScheduledNotificationIdentifiersByChild(childId);
+  for (const identifier of identifiers) {
     try {
-      await Notifications.cancelScheduledNotificationAsync(notif.identifier);
+      await Notifications.cancelScheduledNotificationAsync(identifier);
     } catch {}
   }
+
   scheduledNotifications = scheduledNotifications.filter(n => n.childId !== childId);
 }
 
