@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Text, TextInput } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,19 +17,37 @@ export default function ChangePasswordScreen() {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const handleSave = async () => {
+  // Inline validation errors
+  const [currentPwdError, setCurrentPwdError] = useState('');
+  const [newPwdError, setNewPwdError] = useState('');
+  const [confirmPwdError, setConfirmPwdError] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const [submitSuccess, setSubmitSuccess] = useState('');
+
+  const validate = () => {
+    let valid = true;
+    setCurrentPwdError('');
+    setNewPwdError('');
+    setConfirmPwdError('');
     if (!currentPassword) {
-      Alert.alert('Error', 'Please enter your current password');
-      return;
+      setCurrentPwdError('Please enter your current password');
+      valid = false;
     }
     if (newPassword.length < 6) {
-      Alert.alert('Error', 'New password must be at least 6 characters');
-      return;
+      setNewPwdError('New password must be at least 6 characters');
+      valid = false;
     }
     if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'New passwords do not match');
-      return;
+      setConfirmPwdError('New passwords do not match');
+      valid = false;
     }
+    return valid;
+  };
+
+  const handleSave = async () => {
+    if (!validate()) return;
+    setSubmitError('');
+    setSubmitSuccess('');
     setSaving(true);
     try {
       // Verify current password
@@ -41,11 +59,10 @@ export default function ChangePasswordScreen() {
 
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
-      Alert.alert('Success', 'Password updated successfully', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      setSubmitSuccess('Password updated successfully!');
+      setTimeout(() => router.back(), 2000);
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Failed to update password');
+      setSubmitError(e?.message || 'Failed to update password');
     } finally {
       setSaving(false);
     }
@@ -58,6 +75,8 @@ export default function ChangePasswordScreen() {
     show,
     onToggle,
     placeholder,
+    error,
+    onChangeExtra,
   }: {
     label: string;
     value: string;
@@ -65,16 +84,18 @@ export default function ChangePasswordScreen() {
     show: boolean;
     onToggle: () => void;
     placeholder: string;
+    error?: string;
+    onChangeExtra?: () => void;
   }) => (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.passwordRow}>
         <TextInput
           value={value}
-          onChangeText={onChangeText}
+          onChangeText={(v) => { onChangeText(v); if (onChangeExtra) onChangeExtra(); }}
           placeholder={placeholder}
           secureTextEntry={!show}
-          style={styles.input}
+          style={[styles.input, error && styles.inputError]}
           underlineColorAndroid="transparent"
           activeUnderlineColor="transparent"
           placeholderTextColor="#94A3B8"
@@ -84,6 +105,7 @@ export default function ChangePasswordScreen() {
           <Ionicons name={show ? 'eye-off-outline' : 'eye-outline'} size={20} color="#94A3B8" />
         </TouchableOpacity>
       </View>
+      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
     </View>
   );
 
@@ -100,6 +122,25 @@ export default function ChangePasswordScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Success Banner */}
+        {submitSuccess ? (
+          <View style={styles.successBanner}>
+            <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+            <Text style={styles.successBannerText}>{submitSuccess}</Text>
+          </View>
+        ) : null}
+
+        {/* Error Banner */}
+        {submitError ? (
+          <View style={styles.errorBanner}>
+            <Ionicons name="alert-circle" size={18} color="#EF4444" />
+            <Text style={styles.errorBannerText}>{submitError}</Text>
+            <TouchableOpacity onPress={() => setSubmitError('')}>
+              <Ionicons name="close" size={16} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View style={styles.infoCard}>
           <Ionicons name="information-circle" size={20} color="#6366F1" />
           <Text style={styles.infoText}>
@@ -114,22 +155,26 @@ export default function ChangePasswordScreen() {
           show={showCurrent}
           onToggle={() => setShowCurrent(!showCurrent)}
           placeholder="Enter current password"
+          error={currentPwdError}
+          onChangeExtra={() => setCurrentPwdError('')}
         />
         <PasswordField
           label="New Password"
           value={newPassword}
-          onChangeText={setNewPassword}
+          onChangeText={(v) => { setNewPassword(v); if (newPwdError) setNewPwdError(''); if (confirmPwdError) setConfirmPwdError(''); }}
           show={showNew}
           onToggle={() => setShowNew(!showNew)}
           placeholder="Enter new password"
+          error={newPwdError}
         />
         <PasswordField
           label="Confirm New Password"
           value={confirmPassword}
-          onChangeText={setConfirmPassword}
+          onChangeText={(v) => { setConfirmPassword(v); if (confirmPwdError) setConfirmPwdError(''); }}
           show={showConfirm}
           onToggle={() => setShowConfirm(!showConfirm)}
           placeholder="Re-enter new password"
+          error={confirmPwdError}
         />
       </ScrollView>
     </View>
@@ -162,4 +207,18 @@ const styles = StyleSheet.create({
   inputContent: { fontSize: 16, color: '#0F172A', paddingHorizontal: 4 },
   passwordRow: { flexDirection: 'row', alignItems: 'center', position: 'relative' },
   eyeBtn: { position: 'absolute', right: 14, top: 14, zIndex: 1 },
+  inputError: { borderColor: '#EF4444', borderWidth: 1.5 },
+  fieldError: { fontSize: 12, color: '#EF4444', marginTop: 4, marginLeft: 4 },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginBottom: 16, paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: '#FEF2F2', borderRadius: 12, borderWidth: 1, borderColor: '#FECACA',
+  },
+  errorBannerText: { flex: 1, fontSize: 13, color: '#EF4444', fontWeight: '500' },
+  successBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginBottom: 16, paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: '#F0FDF4', borderRadius: 12, borderWidth: 1, borderColor: '#BBF7D0',
+  },
+  successBannerText: { flex: 1, fontSize: 13, color: '#10B981', fontWeight: '500' },
 });

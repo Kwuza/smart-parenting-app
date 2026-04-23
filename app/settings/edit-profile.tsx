@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image } from 'react-native';
+import { View, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import { Text, TextInput } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,7 +18,14 @@ export default function EditProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
+  // Inline validation
+  const [nameError, setNameError] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const [submitSuccess, setSubmitSuccess] = useState('');
+  const [uploadError, setUploadError] = useState('');
+
   const pickImage = async () => {
+    setUploadError('');
     setUploading(true);
     try {
       const result = await pickAndUploadImage({ userId: user?.id || '' });
@@ -28,15 +35,17 @@ export default function EditProfileScreen() {
       }
     } catch (e: any) {
       console.error('[EditProfile] Upload error:', e);
-      Alert.alert('Upload failed', e?.message || 'Could not upload image');
+      setUploadError(e?.message || 'Could not upload image');
     } finally {
       setUploading(false);
     }
   };
 
   const handleSave = async () => {
+    setSubmitError('');
+    setSubmitSuccess('');
     if (!name.trim()) {
-      Alert.alert('Error', 'Name is required');
+      setNameError('Name is required');
       return;
     }
     setSaving(true);
@@ -46,9 +55,10 @@ export default function EditProfileScreen() {
         data: { name: name.trim(), avatar_url: avatarUrl },
       });
       if (error) throw error;
-      Alert.alert('Success', 'Profile updated', [{ text: 'OK', onPress: () => router.back() }]);
+      setSubmitSuccess('Profile updated successfully!');
+      setTimeout(() => router.back(), 2000);
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'Failed to update profile');
+      setSubmitError(e?.message || 'Failed to update profile');
     } finally {
       setSaving(false);
     }
@@ -78,6 +88,36 @@ export default function EditProfileScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Upload Error Banner */}
+        {uploadError ? (
+          <View style={styles.errorBanner}>
+            <Ionicons name="alert-circle" size={18} color="#EF4444" />
+            <Text style={styles.errorBannerText}>{uploadError}</Text>
+            <TouchableOpacity onPress={() => setUploadError('')}>
+              <Ionicons name="close" size={16} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* Success Banner */}
+        {submitSuccess ? (
+          <View style={styles.successBanner}>
+            <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+            <Text style={styles.successBannerText}>{submitSuccess}</Text>
+          </View>
+        ) : null}
+
+        {/* Error Banner */}
+        {submitError ? (
+          <View style={styles.errorBanner}>
+            <Ionicons name="alert-circle" size={18} color="#EF4444" />
+            <Text style={styles.errorBannerText}>{submitError}</Text>
+            <TouchableOpacity onPress={() => setSubmitError('')}>
+              <Ionicons name="close" size={16} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <TouchableOpacity style={styles.avatarSection} onPress={pickImage} activeOpacity={0.7}>
           {uploading ? (
             <View style={styles.avatar}>
@@ -98,17 +138,18 @@ export default function EditProfileScreen() {
 
         <View style={styles.form}>
           <View style={styles.field}>
-            <Text style={styles.label}>Full Name</Text>
+            <Text style={styles.label}>Full Name <Text style={styles.required}>*</Text></Text>
             <TextInput
               value={name}
-              onChangeText={setName}
+              onChangeText={(v) => { setName(v); if (nameError) setNameError(''); }}
               placeholder="Enter your name"
-              style={styles.input}
+              style={[styles.input, nameError && styles.inputError]}
               underlineColorAndroid="transparent"
               activeUnderlineColor="transparent"
               placeholderTextColor="#94A3B8"
               contentStyle={styles.inputContent}
             />
+            {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
           </View>
 
           <View style={styles.field}>
@@ -186,6 +227,7 @@ const styles = StyleSheet.create({
   form: { gap: 20 },
   field: {},
   label: { fontSize: 13, fontWeight: '600', color: '#64748B', marginBottom: 6, marginLeft: 4 },
+  required: { color: '#EF4444' },
   input: {
     backgroundColor: '#FFFDFF',
     borderRadius: 14,
@@ -195,5 +237,19 @@ const styles = StyleSheet.create({
   },
   inputDisabled: { backgroundColor: '#F8FAFC' },
   inputContent: { fontSize: 16, color: '#0F172A', paddingHorizontal: 4 },
+  inputError: { borderColor: '#EF4444', borderWidth: 1.5 },
+  fieldError: { fontSize: 12, color: '#EF4444', marginTop: 4, marginLeft: 4 },
   fieldHint: { fontSize: 12, color: '#94A3B8', marginTop: 4, marginLeft: 4 },
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginBottom: 16, paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: '#FEF2F2', borderRadius: 12, borderWidth: 1, borderColor: '#FECACA',
+  },
+  errorBannerText: { flex: 1, fontSize: 13, color: '#EF4444', fontWeight: '500' },
+  successBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginBottom: 16, paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: '#F0FDF4', borderRadius: 12, borderWidth: 1, borderColor: '#BBF7D0',
+  },
+  successBannerText: { flex: 1, fontSize: 13, color: '#10B981', fontWeight: '500' },
 });
