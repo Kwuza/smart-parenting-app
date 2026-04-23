@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react';
-import { View, ScrollView, StyleSheet, Alert, TouchableOpacity, TextInput as RNTextInput, FlatList } from 'react-native';
+import { View, ScrollView, StyleSheet, TouchableOpacity, TextInput as RNTextInput, FlatList, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../stores/auth';
-import { logActivity, ActivityType, Child } from '../../lib/api';
+import { scheduleScheduledActivityNotifications } from '../../lib/notifications';
+import { logActivity, scheduleActivity, ActivityType } from '../../lib/api';
 import ScreenHeader from '../../components/ScreenHeader';
 
 type ActivityTypeExtended = ActivityType | 'nap' | 'physical_activity';
@@ -78,92 +79,6 @@ const SUBJECTS = [
   { key: 'music', label: 'Music' },
   { key: 'art', label: 'Art' },
 ];
-
-// --- Duration Input with both stepper and text ---
-function DurationInput({
-  hours,
-  minutes,
-  onHoursChange,
-  onMinutesChange,
-}: {
-  hours: string;
-  minutes: string;
-  onHoursChange: (v: string) => void;
-  onMinutesChange: (v: string) => void;
-}) {
-  const hRef = useRef<RNTextInput>(null);
-  const mRef = useRef<RNTextInput>(null);
-
-  return (
-    <View style={styles.durationRow}>
-      <View style={styles.durationCol}>
-        <TouchableOpacity
-          style={styles.stepperBtn}
-          onPress={() => onHoursChange(String(Math.min(23, (parseInt(hours) || 0) + 1)))}
-          activeOpacity={0.6}
-        >
-          <Ionicons name="add" size={18} color="#FF7F60" />
-        </TouchableOpacity>
-        <TouchableOpacity activeOpacity={1} onPress={() => hRef.current?.focus()}>
-          <RNTextInput
-            ref={hRef}
-            value={hours}
-            onChangeText={(t) => {
-              const cleaned = t.replace(/[^0-9]/g, '');
-              const num = parseInt(cleaned) || 0;
-              onHoursChange(String(Math.min(23, num)));
-            }}
-            keyboardType="numeric"
-            style={styles.durationText}
-            maxLength={2}
-            selectTextOnFocus
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.stepperBtn}
-          onPress={() => onHoursChange(String(Math.max(0, (parseInt(hours) || 0) - 1)))}
-          activeOpacity={0.6}
-        >
-          <Ionicons name="remove" size={18} color="#64748B" />
-        </TouchableOpacity>
-        <Text style={styles.durationLabel}>hrs</Text>
-      </View>
-      <Text style={styles.durationColon}>:</Text>
-      <View style={styles.durationCol}>
-        <TouchableOpacity
-          style={styles.stepperBtn}
-          onPress={() => onMinutesChange(String(Math.min(59, (parseInt(minutes) || 0) + 5)))}
-          activeOpacity={0.6}
-        >
-          <Ionicons name="add" size={18} color="#FF7F60" />
-        </TouchableOpacity>
-        <TouchableOpacity activeOpacity={1} onPress={() => mRef.current?.focus()}>
-          <RNTextInput
-            ref={mRef}
-            value={minutes}
-            onChangeText={(t) => {
-              const cleaned = t.replace(/[^0-9]/g, '');
-              const num = parseInt(cleaned) || 0;
-              onMinutesChange(String(Math.min(59, num)));
-            }}
-            keyboardType="numeric"
-            style={styles.durationText}
-            maxLength={2}
-            selectTextOnFocus
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.stepperBtn}
-          onPress={() => onMinutesChange(String(Math.max(0, (parseInt(minutes) || 0) - 5)))}
-          activeOpacity={0.6}
-        >
-          <Ionicons name="remove" size={18} color="#64748B" />
-        </TouchableOpacity>
-        <Text style={styles.durationLabel}>min</Text>
-      </View>
-    </View>
-  );
-}
 
 // --- Time Range Input (start/end → calculated duration) ---
 function TimeRangeInput({
@@ -425,17 +340,36 @@ function MultiChipSelector({
 
 // --- Main Screen ---
 export default function LogActivityScreen() {
+  const [mode, setMode] = useState<'log' | 'schedule'>('log');
   const [activityType, setActivityType] = useState<ActivityTypeExtended>('screen_time');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const { selectedChild, children, selectChild } = useApp();
+  const [submitError, setSubmitError] = useState('');
+  const { selectedChild, children, selectChild, loadChildren } = useApp();
   const router = useRouter();
 
-  // Duration (screen_time only — uses hours/minutes)
-  const [hours, setHours] = useState('1');
-  const [minutes, setMinutes] = useState('30');
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadChildren();
+      // Read fresh from store to avoid stale closure
+      const freshChildren = useApp.getState().children;
+      const freshSelected = useApp.getState().selectedChild;
+      if (freshSelected) {
+        const updated = freshChildren.find(c => c.id === freshSelected.id);
+        if (!updated && freshChildren[0]) {
+          useApp.getState().selectChild(freshChildren[0]);
+        }
+      }
+    } catch {
+      // error handled by children list being empty
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
-  // Time range (sleep, nap, education, physical — start/end, duration auto-calculated)
+  // Time range (sleep, nap, education, physical, screen_time — start/end, duration auto-calculated)
   const [sleepStartH, setSleepStartH] = useState('9');
   const [sleepStartM, setSleepStartM] = useState('00');
   const [sleepStartP, setSleepStartP] = useState<'AM' | 'PM'>('PM');
@@ -465,6 +399,12 @@ export default function LogActivityScreen() {
   const [activeEndP, setActiveEndP] = useState<'AM' | 'PM'>('PM');
 
   // Screen time
+  const [screenStartH, setScreenStartH] = useState('3');
+  const [screenStartM, setScreenStartM] = useState('00');
+  const [screenStartP, setScreenStartP] = useState<'AM' | 'PM'>('PM');
+  const [screenEndH, setScreenEndH] = useState('4');
+  const [screenEndM, setScreenEndM] = useState('00');
+  const [screenEndP, setScreenEndP] = useState<'AM' | 'PM'>('PM');
   const [device, setDevice] = useState('phone');
   const [screenCategory, setScreenCategory] = useState('leisure');
 
@@ -487,6 +427,18 @@ export default function LogActivityScreen() {
 
   // Notes (shared)
   const [notes, setNotes] = useState('');
+
+  // ── Schedule mode state ──
+  const [scheduleDate, setScheduleDate] = useState(new Date());
+  const [schedHour, setSchedHour] = useState('3');
+  const [schedMinute, setSchedMinute] = useState('00');
+  const [schedPeriod, setSchedPeriod] = useState<'AM' | 'PM'>('PM');
+  const [minDurationH, setMinDurationH] = useState('1');
+  const [minDurationM, setMinDurationM] = useState('0');
+  const [maxDurationH, setMaxDurationH] = useState('2');
+  const [maxDurationM, setMaxDurationM] = useState('0');
+  const [schedMealType, setSchedMealType] = useState('lunch');
+  const [schedCategory, setSchedCategory] = useState('leisure');
 
   const activeType = ACTIVITY_TYPES.find((t) => t.key === activityType)!;
 
@@ -511,22 +463,128 @@ export default function LogActivityScreen() {
     );
   };
 
-  const handleLog = async () => {
-    if (!selectedChild) {
-      Alert.alert('No child selected', 'Add a child profile first.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Add Child', onPress: () => router.push('/child/wizard' as any) },
-      ]);
-      return;
+  // Date helpers for scheduling
+  const goToPrevDay = () => {
+    const d = new Date(scheduleDate);
+    d.setDate(d.getDate() - 1);
+    setScheduleDate(d);
+  };
+  const goToNextDay = () => {
+    const d = new Date(scheduleDate);
+    d.setDate(d.getDate() + 1);
+    setScheduleDate(d);
+  };
+  const goToToday = () => setScheduleDate(new Date());
+
+  const formatScheduleDate = (d: Date) => {
+    const isT = isToday(d);
+    const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    return isT ? `Today, ${dateStr}` : dateStr;
+  };
+
+  const isToday = (d: Date) => {
+    const now = new Date();
+    return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  };
+
+  const to24Hour = (h: string, m: string, p: 'AM' | 'PM') => {
+    let hour = parseInt(h) || 0;
+    const min = parseInt(m) || 0;
+    if (p === 'PM' && hour !== 12) hour += 12;
+    if (p === 'AM' && hour === 12) hour = 0;
+    return { hour, min };
+  };
+
+  const computeScheduleRange = () => {
+    const { hour, min } = to24Hour(schedHour, schedMinute, schedPeriod);
+    const start = new Date(scheduleDate);
+    start.setHours(hour, min, 0, 0);
+
+    const minMins = (parseInt(minDurationH) || 0) * 60 + (parseInt(minDurationM) || 0);
+    const maxMins = (parseInt(maxDurationH) || 0) * 60 + (parseInt(maxDurationM) || 0);
+
+    const minEnd = new Date(start.getTime() + minMins * 60000);
+    const maxEnd = new Date(start.getTime() + maxMins * 60000);
+
+    const fmt = (d: Date) => {
+      let h = d.getHours();
+      const m = d.getMinutes();
+      const p = h >= 12 ? 'PM' : 'AM';
+      if (h === 0) h = 12;
+      else if (h > 12) h -= 12;
+      return `${h}:${String(m).padStart(2, '0')} ${p}`;
+    };
+
+    return { startTime: fmt(start), minEndTime: fmt(minEnd), maxEndTime: fmt(maxEnd), minMins, maxMins };
+  };
+
+  const handleSchedule = async () => {
+    if (!selectedChild) return;
+    setLoading(true);
+    setSubmitError('');
+    try {
+      const { hour, min } = to24Hour(schedHour, schedMinute, schedPeriod);
+      const start = new Date(scheduleDate);
+      start.setHours(hour, min, 0, 0);
+      const startIso = start.toISOString();
+
+      let minMins: number | null = null;
+      let maxMins: number | null = null;
+      let category: string | undefined;
+      let mealType: string | undefined;
+
+      if (activityType === 'meal') {
+        mealType = schedMealType;
+      } else {
+        minMins = (parseInt(minDurationH) || 0) * 60 + (parseInt(minDurationM) || 0);
+        maxMins = (parseInt(maxDurationH) || 0) * 60 + (parseInt(maxDurationM) || 0);
+        if (minMins > maxMins) {
+          throw new Error('Minimum duration cannot exceed maximum duration');
+        }
+        if (maxMins === 0) {
+          throw new Error('Maximum duration must be greater than 0');
+        }
+        if (activityType === 'screen_time') {
+          category = schedCategory;
+        }
+      }
+
+      const scheduled = await scheduleActivity(
+        selectedChild.id,
+        activityType,
+        startIso,
+        minMins,
+        maxMins,
+        category,
+        mealType,
+        activityType === 'meal' ? foodGroups : undefined
+      );
+      await scheduleScheduledActivityNotifications(scheduled, selectedChild.name);
+      setSuccess(true);
+      setTimeout(() => {
+        setSuccess(false);
+        router.back();
+      }, 1800);
+    } catch (err: any) {
+      setSubmitError(err.message || 'Failed to schedule activity');
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleLog = async () => {
+    if (!selectedChild) return;
 
     setLoading(true);
+    setSubmitError('');
     try {
       let value: Record<string, any> = {};
       switch (activityType) {
-        case 'screen_time':
-          value = { hours: parseInt(hours) || 0, minutes: parseInt(minutes) || 0, device, category: screenCategory };
+        case 'screen_time': {
+          const sd = calcDuration(screenStartH, screenStartM, screenStartP, screenEndH, screenEndM, screenEndP);
+          value = { hours: sd.hours, minutes: sd.minutes, device, category: screenCategory, start_time: `${screenStartH}:${screenStartM} ${screenStartP}`, end_time: `${screenEndH}:${screenEndM} ${screenEndP}` };
           break;
+        }
         case 'sleep': {
           const sd = calcDuration(sleepStartH, sleepStartM, sleepStartP, sleepEndH, sleepEndM, sleepEndP);
           value = { hours: sd.hours, minutes: sd.minutes, quality: sleepQuality, start_time: `${sleepStartH}:${sleepStartM} ${sleepStartP}`, end_time: `${sleepEndH}:${sleepEndM} ${sleepEndP}` };
@@ -581,7 +639,7 @@ export default function LogActivityScreen() {
         router.back();
       }, 1800);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to log activity');
+      setSubmitError(err.message || 'Failed to log activity');
     } finally {
       setLoading(false);
     }
@@ -594,19 +652,51 @@ export default function LogActivityScreen() {
         <View style={styles.successCheck}>
           <Ionicons name="checkmark-circle" size={72} color="#10B981" />
         </View>
-        <Text style={styles.successTitle}>Logged!</Text>
+        <Text style={styles.successTitle}>{mode === 'schedule' ? 'Scheduled!' : 'Logged!'}</Text>
         <Text style={styles.successSubtitle}>
-          {activeType.label} recorded for {selectedChild?.name || 'your child'}
+          {mode === 'schedule'
+            ? `${activeType.label} scheduled for ${selectedChild?.name || 'your child'}`
+            : `${activeType.label} recorded for ${selectedChild?.name || 'your child'}`}
         </Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <ScreenHeader title="Log Activity" icon="create-outline" />
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#FEFBF6' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScreenHeader title="Activities" icon="create-outline" />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor='#FF7F60' />}>
+        {/* Error Banner */}
+        {submitError ? (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorBannerText}>{submitError}</Text>
+            <TouchableOpacity onPress={() => setSubmitError('')} hitSlop={8}>
+              <Ionicons name="close" size={16} color="#EF4444" />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* Mode Toggle */}
+        <View style={styles.modeToggle}>
+          <TouchableOpacity
+            style={[styles.modeBtn, mode === 'log' && styles.modeBtnActive]}
+            onPress={() => setMode('log')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="create-outline" size={16} color={mode === 'log' ? '#FF7F60' : '#94A3B8'} />
+            <Text style={[styles.modeBtnText, mode === 'log' && styles.modeBtnTextActive]}>Log</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeBtn, mode === 'schedule' && styles.modeBtnActive]}
+            onPress={() => setMode('schedule')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="calendar-outline" size={16} color={mode === 'schedule' ? '#FF7F60' : '#94A3B8'} />
+            <Text style={[styles.modeBtnText, mode === 'schedule' && styles.modeBtnTextActive]}>Schedule</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Type Selector */}
         <View style={styles.typeGrid}>
           {ACTIVITY_TYPES.map((t) => {
@@ -627,122 +717,352 @@ export default function LogActivityScreen() {
           })}
         </View>
 
-        {/* Duration — screen_time only (manual hours/minutes) */}
-        {activityType === 'screen_time' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Duration</Text>
-            <DurationInput hours={hours} minutes={minutes} onHoursChange={setHours} onMinutesChange={setMinutes} />
-          </View>
-        )}
-
-        {/* Time Range — sleep, nap, education, physical */}
-        {activityType === 'sleep' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Sleep Time</Text>
-            <TimeRangeInput
-              startHour={sleepStartH} startMinute={sleepStartM} startPeriod={sleepStartP}
-              endHour={sleepEndH} endMinute={sleepEndM} endPeriod={sleepEndP}
-              onStartHourChange={setSleepStartH} onStartMinuteChange={setSleepStartM} onStartPeriodChange={setSleepStartP}
-              onEndHourChange={setSleepEndH} onEndMinuteChange={setSleepEndM} onEndPeriodChange={setSleepEndP}
-            />
-          </View>
-        )}
-        {activityType === 'nap' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Nap Time</Text>
-            <TimeRangeInput
-              startHour={napStartH} startMinute={napStartM} startPeriod={napStartP}
-              endHour={napEndH} endMinute={napEndM} endPeriod={napEndP}
-              onStartHourChange={setNapStartH} onStartMinuteChange={setNapStartM} onStartPeriodChange={setNapStartP}
-              onEndHourChange={setNapEndH} onEndMinuteChange={setNapEndM} onEndPeriodChange={setNapEndP}
-            />
-          </View>
-        )}
-        {activityType === 'education' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Learning Time</Text>
-            <TimeRangeInput
-              startHour={learnStartH} startMinute={learnStartM} startPeriod={learnStartP}
-              endHour={learnEndH} endMinute={learnEndM} endPeriod={learnEndP}
-              onStartHourChange={setLearnStartH} onStartMinuteChange={setLearnStartM} onStartPeriodChange={setLearnStartP}
-              onEndHourChange={setLearnEndH} onEndMinuteChange={setLearnEndM} onEndPeriodChange={setLearnEndP}
-            />
-          </View>
-        )}
-        {activityType === 'physical_activity' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Active Time</Text>
-            <TimeRangeInput
-              startHour={activeStartH} startMinute={activeStartM} startPeriod={activeStartP}
-              endHour={activeEndH} endMinute={activeEndM} endPeriod={activeEndP}
-              onStartHourChange={setActiveStartH} onStartMinuteChange={setActiveStartM} onStartPeriodChange={setActiveStartP}
-              onEndHourChange={setActiveEndH} onEndMinuteChange={setActiveEndM} onEndPeriodChange={setActiveEndP}
-            />
-          </View>
-        )}
-
-        {/* Screen Time details */}
-        {activityType === 'screen_time' && (
+        {/* ────────────────────────────────────────────────── */}
+        {/* SCHEDULE MODE FORM */}
+        {/* ────────────────────────────────────────────────── */}
+        {mode === 'schedule' && (
           <>
+            {/* Date selector */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Category</Text>
-              <ChipSelector items={SCREEN_CATEGORIES} value={screenCategory} onChange={setScreenCategory} showIcon />
+              <Text style={styles.cardTitle}>Date</Text>
+              <View style={styles.dateNavRow}>
+                <TouchableOpacity onPress={goToPrevDay} style={styles.dateArrow} activeOpacity={0.6}>
+                  <Ionicons name="chevron-back" size={20} color="#0F172A" />
+                </TouchableOpacity>
+                <View style={styles.dateDisplay}>
+                  <Text style={styles.dateText}>{formatScheduleDate(scheduleDate)}</Text>
+                  {!isToday(scheduleDate) && (
+                    <TouchableOpacity onPress={goToToday} style={styles.todayPill} activeOpacity={0.7}>
+                      <Text style={styles.todayPillText}>↩ Today</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <TouchableOpacity onPress={goToNextDay} style={styles.dateArrow} activeOpacity={0.6}>
+                  <Ionicons name="chevron-forward" size={20} color="#0F172A" />
+                </TouchableOpacity>
+              </View>
             </View>
+
+            {/* Start time */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Device</Text>
-              <ChipSelector items={DEVICES} value={device} onChange={setDevice} showIcon />
+              <Text style={styles.cardTitle}>Start Time</Text>
+              <View style={styles.scheduleTimeRow}>
+                <View style={styles.timeDigitCol}>
+                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setSchedHour(String(Math.min(12, (parseInt(schedHour) || 0) + 1)))}>
+                    <Ionicons name="add" size={18} color="#FF7F60" />
+                  </TouchableOpacity>
+                  <RNTextInput
+                    value={schedHour}
+                    onChangeText={(t) => { const n = Math.min(12, Math.max(1, parseInt(t.replace(/[^0-9]/g, '')) || 0)); setSchedHour(String(n)); }}
+                    keyboardType="numeric"
+                    style={[styles.durationText, { width: 52 }]}
+                    maxLength={2}
+                    selectTextOnFocus
+                  />
+                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setSchedHour(String(Math.max(1, (parseInt(schedHour) || 0) - 1)))}>
+                    <Ionicons name="remove" size={18} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.durationColon}>:</Text>
+                <View style={styles.timeDigitCol}>
+                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setSchedMinute(String(Math.min(59, (parseInt(schedMinute) || 0) + 5)))}>
+                    <Ionicons name="add" size={18} color="#FF7F60" />
+                  </TouchableOpacity>
+                  <RNTextInput
+                    value={schedMinute}
+                    onChangeText={(t) => { const n = Math.min(59, Math.max(0, parseInt(t.replace(/[^0-9]/g, '')) || 0)); setSchedMinute(String(n).padStart(2, '0')); }}
+                    keyboardType="numeric"
+                    style={[styles.durationText, { width: 52 }]}
+                    maxLength={2}
+                    selectTextOnFocus
+                  />
+                  <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setSchedMinute(String(Math.max(0, (parseInt(schedMinute) || 0) - 5)))}>
+                    <Ionicons name="remove" size={18} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.timePeriodCol}>
+                  <TouchableOpacity
+                    style={[styles.periodBtn, schedPeriod === 'AM' && styles.periodBtnActive]}
+                    activeOpacity={0.7}
+                    onPress={() => setSchedPeriod('AM')}
+                  >
+                    <Text style={[styles.periodText, schedPeriod === 'AM' && styles.periodTextActive]}>AM</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.periodBtn, schedPeriod === 'PM' && styles.periodBtnActive]}
+                    activeOpacity={0.7}
+                    onPress={() => setSchedPeriod('PM')}
+                  >
+                    <Text style={[styles.periodText, schedPeriod === 'PM' && styles.periodTextActive]}>PM</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
+
+            {/* Duration range — hidden for meal (just start-time reminder) */}
+            {activityType !== 'meal' && (
+              <>
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Duration Range</Text>
+                  <View style={styles.durationRangeRow}>
+                    <View style={styles.durationRangeCol}>
+                      <Text style={styles.durationRangeLabel}>Minimum</Text>
+                      <View style={styles.durationRangeInputs}>
+                        <View style={styles.timeDigitCol}>
+                          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setMinDurationH(String(Math.min(23, (parseInt(minDurationH) || 0) + 1)))}>
+                            <Ionicons name="add" size={16} color="#FF7F60" />
+                          </TouchableOpacity>
+                          <RNTextInput
+                            value={minDurationH}
+                            onChangeText={(t) => { const n = Math.min(23, Math.max(0, parseInt(t.replace(/[^0-9]/g, '')) || 0)); setMinDurationH(String(n)); }}
+                            keyboardType="numeric"
+                            style={[styles.durationText, { width: 44, fontSize: 24 }]}
+                            maxLength={2}
+                            selectTextOnFocus
+                          />
+                          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setMinDurationH(String(Math.max(0, (parseInt(minDurationH) || 0) - 1)))}>
+                            <Ionicons name="remove" size={16} color="#64748B" />
+                          </TouchableOpacity>
+                          <Text style={styles.smallLabel}>h</Text>
+                        </View>
+                        <View style={styles.timeDigitCol}>
+                          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setMinDurationM(String(Math.min(59, (parseInt(minDurationM) || 0) + 5)))}>
+                            <Ionicons name="add" size={16} color="#FF7F60" />
+                          </TouchableOpacity>
+                          <RNTextInput
+                            value={minDurationM}
+                            onChangeText={(t) => { const n = Math.min(59, Math.max(0, parseInt(t.replace(/[^0-9]/g, '')) || 0)); setMinDurationM(String(n)); }}
+                            keyboardType="numeric"
+                            style={[styles.durationText, { width: 44, fontSize: 24 }]}
+                            maxLength={2}
+                            selectTextOnFocus
+                          />
+                          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setMinDurationM(String(Math.max(0, (parseInt(minDurationM) || 0) - 5)))}>
+                            <Ionicons name="remove" size={16} color="#64748B" />
+                          </TouchableOpacity>
+                          <Text style={styles.smallLabel}>m</Text>
+                        </View>
+                      </View>
+                    </View>
+                    <View style={styles.durationRangeDivider} />
+                    <View style={styles.durationRangeCol}>
+                      <Text style={styles.durationRangeLabel}>Maximum</Text>
+                      <View style={styles.durationRangeInputs}>
+                        <View style={styles.timeDigitCol}>
+                          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setMaxDurationH(String(Math.min(23, (parseInt(maxDurationH) || 0) + 1)))}>
+                            <Ionicons name="add" size={16} color="#FF7F60" />
+                          </TouchableOpacity>
+                          <RNTextInput
+                            value={maxDurationH}
+                            onChangeText={(t) => { const n = Math.min(23, Math.max(0, parseInt(t.replace(/[^0-9]/g, '')) || 0)); setMaxDurationH(String(n)); }}
+                            keyboardType="numeric"
+                            style={[styles.durationText, { width: 44, fontSize: 24 }]}
+                            maxLength={2}
+                            selectTextOnFocus
+                          />
+                          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setMaxDurationH(String(Math.max(0, (parseInt(maxDurationH) || 0) - 1)))}>
+                            <Ionicons name="remove" size={16} color="#64748B" />
+                          </TouchableOpacity>
+                          <Text style={styles.smallLabel}>h</Text>
+                        </View>
+                        <View style={styles.timeDigitCol}>
+                          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setMaxDurationM(String(Math.min(59, (parseInt(maxDurationM) || 0) + 5)))}>
+                            <Ionicons name="add" size={16} color="#FF7F60" />
+                          </TouchableOpacity>
+                          <RNTextInput
+                            value={maxDurationM}
+                            onChangeText={(t) => { const n = Math.min(59, Math.max(0, parseInt(t.replace(/[^0-9]/g, '')) || 0)); setMaxDurationM(String(n)); }}
+                            keyboardType="numeric"
+                            style={[styles.durationText, { width: 44, fontSize: 24 }]}
+                            maxLength={2}
+                            selectTextOnFocus
+                          />
+                          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => setMaxDurationM(String(Math.max(0, (parseInt(maxDurationM) || 0) - 5)))}>
+                            <Ionicons name="remove" size={16} color="#64748B" />
+                          </TouchableOpacity>
+                          <Text style={styles.smallLabel}>m</Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Computed time range preview */}
+                {(() => {
+                  const range = computeScheduleRange();
+                  const same = range.minEndTime === range.maxEndTime;
+                  return (
+                    <View style={[styles.card, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}>
+                      <Text style={[styles.cardTitle, { color: '#166534' }]}>Scheduled Time</Text>
+                      <Text style={styles.rangePreviewText}>
+                        <Text style={styles.rangePreviewTime}>{range.startTime}</Text>
+                        {'  →  '}
+                        {same ? (
+                          <Text style={styles.rangePreviewTime}>{range.maxEndTime}</Text>
+                        ) : (
+                          <>
+                            <Text style={styles.rangePreviewTime}>{range.minEndTime}</Text>
+                            {' – '}
+                            <Text style={styles.rangePreviewTime}>{range.maxEndTime}</Text>
+                          </>
+                        )}
+                      </Text>
+                      <Text style={styles.rangePreviewSub}>
+                        {range.maxMins > 0
+                          ? `Up to ${Math.floor(range.maxMins / 60)}h ${range.maxMins % 60}m max`
+                          : 'Set a maximum duration'}
+                      </Text>
+                    </View>
+                  );
+                })()}
+
+                {/* Screen category for scheduled screen time */}
+                {activityType === 'screen_time' && (
+                  <View style={styles.card}>
+                    <Text style={styles.cardTitle}>Category</Text>
+                    <ChipSelector items={SCREEN_CATEGORIES} value={schedCategory} onChange={setSchedCategory} showIcon />
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* Meal type for scheduled meals */}
+            {activityType === 'meal' && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Meal Type</Text>
+                <ChipSelector items={MEALS} value={schedMealType} onChange={setSchedMealType} />
+                <Text style={styles.mealHint}>You'll get a reminder at this time.</Text>
+              </View>
+            )}
           </>
         )}
 
-        {/* Sleep details */}
-        {activityType === 'sleep' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Sleep Quality</Text>
-            <ChipSelector items={QUALITY} value={sleepQuality} onChange={setSleepQuality} showEmoji />
-          </View>
-        )}
-
-        {/* Nap details */}
-        {activityType === 'nap' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Nap Quality</Text>
-            <ChipSelector items={QUALITY} value={napQuality} onChange={setNapQuality} showEmoji />
-          </View>
-        )}
-
-        {/* Meal details */}
-        {activityType === 'meal' && (
+        {/* ────────────────────────────────────────────────── */}
+        {/* LOG MODE FORM */}
+        {/* ────────────────────────────────────────────────── */}
+        {mode === 'log' && (
           <>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Meal</Text>
-              <ChipSelector items={MEALS} value={mealType} onChange={setMealType} />
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>How was it?</Text>
-              <ChipSelector items={QUALITY} value={mealQuality} onChange={setMealQuality} showEmoji />
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Food Groups (select all that apply)</Text>
-              <MultiChipSelector items={FOOD_GROUPS} selected={foodGroups} onToggle={toggleFoodGroup} />
-            </View>
+            {/* Time Range — sleep, nap, education, physical, screen_time */}
+            {activityType === 'screen_time' && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Screen Time</Text>
+                <TimeRangeInput
+                  startHour={screenStartH} startMinute={screenStartM} startPeriod={screenStartP}
+                  endHour={screenEndH} endMinute={screenEndM} endPeriod={screenEndP}
+                  onStartHourChange={setScreenStartH} onStartMinuteChange={setScreenStartM} onStartPeriodChange={setScreenStartP}
+                  onEndHourChange={setScreenEndH} onEndMinuteChange={setScreenEndM} onEndPeriodChange={setScreenEndP}
+                />
+              </View>
+            )}
+            {activityType === 'sleep' && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Sleep Time</Text>
+                <TimeRangeInput
+                  startHour={sleepStartH} startMinute={sleepStartM} startPeriod={sleepStartP}
+                  endHour={sleepEndH} endMinute={sleepEndM} endPeriod={sleepEndP}
+                  onStartHourChange={setSleepStartH} onStartMinuteChange={setSleepStartM} onStartPeriodChange={setSleepStartP}
+                  onEndHourChange={setSleepEndH} onEndMinuteChange={setSleepEndM} onEndPeriodChange={setSleepEndP}
+                />
+              </View>
+            )}
+            {activityType === 'nap' && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Nap Time</Text>
+                <TimeRangeInput
+                  startHour={napStartH} startMinute={napStartM} startPeriod={napStartP}
+                  endHour={napEndH} endMinute={napEndM} endPeriod={napEndP}
+                  onStartHourChange={setNapStartH} onStartMinuteChange={setNapStartM} onStartPeriodChange={setNapStartP}
+                  onEndHourChange={setNapEndH} onEndMinuteChange={setNapEndM} onEndPeriodChange={setNapEndP}
+                />
+              </View>
+            )}
+            {activityType === 'education' && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Learning Time</Text>
+                <TimeRangeInput
+                  startHour={learnStartH} startMinute={learnStartM} startPeriod={learnStartP}
+                  endHour={learnEndH} endMinute={learnEndM} endPeriod={learnEndP}
+                  onStartHourChange={setLearnStartH} onStartMinuteChange={setLearnStartM} onStartPeriodChange={setLearnStartP}
+                  onEndHourChange={setLearnEndH} onEndMinuteChange={setLearnEndM} onEndPeriodChange={setLearnEndP}
+                />
+              </View>
+            )}
+            {activityType === 'physical_activity' && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Active Time</Text>
+                <TimeRangeInput
+                  startHour={activeStartH} startMinute={activeStartM} startPeriod={activeStartP}
+                  endHour={activeEndH} endMinute={activeEndM} endPeriod={activeEndP}
+                  onStartHourChange={setActiveStartH} onStartMinuteChange={setActiveStartM} onStartPeriodChange={setActiveStartP}
+                  onEndHourChange={setActiveEndH} onEndMinuteChange={setActiveEndM} onEndPeriodChange={setActiveEndP}
+                />
+              </View>
+            )}
+
+            {/* Screen Time details */}
+            {activityType === 'screen_time' && (
+              <>
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Category</Text>
+                  <ChipSelector items={SCREEN_CATEGORIES} value={screenCategory} onChange={setScreenCategory} showIcon />
+                </View>
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Device</Text>
+                  <ChipSelector items={DEVICES} value={device} onChange={setDevice} showIcon />
+                </View>
+              </>
+            )}
+
+            {/* Sleep details */}
+            {activityType === 'sleep' && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Sleep Quality</Text>
+                <ChipSelector items={QUALITY} value={sleepQuality} onChange={setSleepQuality} showEmoji />
+              </View>
+            )}
+
+            {/* Nap details */}
+            {activityType === 'nap' && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Nap Quality</Text>
+                <ChipSelector items={QUALITY} value={napQuality} onChange={setNapQuality} showEmoji />
+              </View>
+            )}
+
+            {/* Meal details */}
+            {activityType === 'meal' && (
+              <>
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Meal</Text>
+                  <ChipSelector items={MEALS} value={mealType} onChange={setMealType} />
+                </View>
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>How was it?</Text>
+                  <ChipSelector items={QUALITY} value={mealQuality} onChange={setMealQuality} showEmoji />
+                </View>
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Food Groups (select all that apply)</Text>
+                  <MultiChipSelector items={FOOD_GROUPS} selected={foodGroups} onToggle={toggleFoodGroup} />
+                </View>
+              </>
+            )}
+
+            {/* Physical Activity details */}
+            {activityType === 'physical_activity' && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Activity</Text>
+                <ChipSelector items={PHYSICAL} value={physicalType} onChange={setPhysicalType} />
+              </View>
+            )}
+
+            {/* Education details */}
+            {activityType === 'education' && (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Subject</Text>
+                <ChipSelector items={SUBJECTS} value={subject} onChange={setSubject} />
+              </View>
+            )}
           </>
-        )}
-
-        {/* Physical Activity details */}
-        {activityType === 'physical_activity' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Activity</Text>
-            <ChipSelector items={PHYSICAL} value={physicalType} onChange={setPhysicalType} />
-          </View>
-        )}
-
-        {/* Education details */}
-        {activityType === 'education' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Subject</Text>
-            <ChipSelector items={SUBJECTS} value={subject} onChange={setSubject} />
-          </View>
         )}
 
         {/* Notes */}
@@ -760,9 +1080,9 @@ export default function LogActivityScreen() {
           />
         </View>
 
-        {/* Log Button */}
+        {/* Submit Button */}
         <TouchableOpacity
-          onPress={handleLog}
+          onPress={mode === 'schedule' ? handleSchedule : handleLog}
           disabled={loading || !selectedChild}
           activeOpacity={0.85}
           style={[styles.logButton, !selectedChild && styles.logButtonDisabled, loading && styles.logButtonLoading]}
@@ -770,12 +1090,14 @@ export default function LogActivityScreen() {
           {loading ? (
             <View style={styles.loadingRow}>
               <View style={styles.spinner} />
-              <Text style={styles.logButtonText}>Logging…</Text>
+              <Text style={styles.logButtonText}>{mode === 'schedule' ? 'Scheduling…' : 'Logging…'}</Text>
             </View>
           ) : (
             <>
-              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-              <Text style={styles.logButtonText}>Log {activeType.label}</Text>
+              <Ionicons name={mode === 'schedule' ? 'calendar' : 'checkmark-circle'} size={20} color="#FFFFFF" />
+              <Text style={styles.logButtonText}>
+                {mode === 'schedule' ? `Schedule ${activeType.label}` : `Log ${activeType.label}`}
+              </Text>
             </>
           )}
         </TouchableOpacity>
@@ -790,7 +1112,7 @@ export default function LogActivityScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -877,4 +1199,157 @@ const styles = StyleSheet.create({
   successCheck: { marginBottom: 16 },
   successTitle: { fontSize: 28, fontWeight: '700', color: '#0F172A', marginBottom: 8 },
   successSubtitle: { fontSize: 14, color: '#64748B', textAlign: 'center' },
+  // Error Banner
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+    gap: 8,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#EF4444',
+    fontWeight: '500',
+  },
+
+  // Mode toggle
+  modeToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 20,
+    gap: 4,
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  modeBtnActive: {
+    backgroundColor: '#FFFDFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  modeBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  modeBtnTextActive: {
+    color: '#FF7F60',
+  },
+
+  // Schedule form
+  dateNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dateArrow: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dateText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  todayPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#FFF0ED',
+  },
+  todayPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FF7F60',
+  },
+  scheduleTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  durationRangeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  durationRangeCol: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  durationRangeLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  durationRangeInputs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  durationRangeDivider: {
+    width: 1,
+    backgroundColor: '#E2E8F0',
+    alignSelf: 'stretch',
+    marginVertical: 8,
+  },
+  smallLabel: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  mealHint: {
+    fontSize: 13,
+    color: '#94A3B8',
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  rangePreviewText: {
+    fontSize: 15,
+    color: '#166534',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  rangePreviewTime: {
+    fontWeight: '700',
+    fontSize: 18,
+    color: '#15803D',
+  },
+  rangePreviewSub: {
+    fontSize: 12,
+    color: '#22C55E',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
 });
