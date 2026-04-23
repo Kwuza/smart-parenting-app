@@ -9,18 +9,17 @@ import {
   Image,
   Modal,
   ActivityIndicator,
-  Alert,
+  TextInput as RNTextInput,
 } from 'react-native';
 import { TextInput, Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { DatePicker } from '../../components/DatePicker';
 import {
   createChild,
   updateChildRoutine,
-  updateChildSettings,
   RoutineData,
   getAgeMonths,
-  Child,
 } from '../../lib/api';
 import { pickAndUploadImage, UploadResult } from '../../lib/image';
 import { assessBmi, BmiResult } from '../../lib/bmi';
@@ -37,18 +36,14 @@ type AvatarIcon = (typeof AVATAR_ICONS)[number];
 
 const QUICK_TIMES = {
   bed: [
-    { h: '7', m: '30', p: 'PM' },
     { h: '8', m: '00', p: 'PM' },
     { h: '8', m: '30', p: 'PM' },
     { h: '9', m: '00', p: 'PM' },
-    { h: '9', m: '30', p: 'PM' },
   ],
   wake: [
-    { h: '5', m: '30', p: 'AM' },
     { h: '6', m: '00', p: 'AM' },
     { h: '6', m: '30', p: 'AM' },
     { h: '7', m: '00', p: 'AM' },
-    { h: '7', m: '30', p: 'AM' },
   ],
   breakfast: [
     { h: '6', m: '30', p: 'AM' },
@@ -93,15 +88,22 @@ const QUICK_TIMES = {
 } as const;
 
 const STEPS = [
-  { key: 'profile', title: 'Profile', icon: 'person-outline' },
-  { key: 'body', title: 'Body', icon: 'body-outline' },
-  { key: 'sleep', title: 'Sleep', icon: 'moon-outline' },
-  { key: 'meals', title: 'Meals', icon: 'restaurant-outline' },
-  { key: 'active', title: 'Active', icon: 'fitness-outline' },
+  { key: 'profile', title: 'Profile', icon: 'person-outline', emoji: '👤' },
+  { key: 'body', title: 'Body', icon: 'body-outline', emoji: '📏' },
+  { key: 'sleep', title: 'Sleep', icon: 'moon-outline', emoji: '🌙' },
+  { key: 'meals', title: 'Meals', icon: 'restaurant-outline', emoji: '🍽️' },
+  { key: 'active', title: 'Active', icon: 'fitness-outline', emoji: '⚡' },
 ] as const;
 type StepKey = (typeof STEPS)[number]['key'];
 
 type TimeP = 'AM' | 'PM';
+
+const BMI_COLORS: Record<string, { bg: string; text: string }> = {
+  underweight: { bg: '#FEF3C7', text: '#D97706' }, // amber
+  normal: { bg: '#ECFDF5', text: '#059669' },      // green
+  overweight: { bg: '#FFF7ED', text: '#EA580C' },  // orange
+  obese: { bg: '#FEF2F2', text: '#DC2626' },      // red
+};
 
 // ════════════════════════════════════════════
 // Helpers
@@ -112,6 +114,10 @@ function toTimeStr(h: string, m: string, p: TimeP): string {
   if (p === 'PM' && hour !== 12) hour += 12;
   if (p === 'AM' && hour === 12) hour = 0;
   return `${hour.toString().padStart(2, '0')}:${m.padStart(2, '0')}:00`;
+}
+
+function formatDob(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 // ════════════════════════════════════════════
@@ -131,11 +137,9 @@ export default function AddChildWizardScreen() {
 
   // ── Profile ──
   const [name, setName] = useState('');
-  const [dob, setDob] = useState('');
+  const [dob, setDob] = useState<Date | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [selectedIcon, setSelectedIcon] = useState<AvatarIcon>('👶');
-  const [showQuickAges, setShowQuickAges] = useState(false);
-
   // ── Body ──
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
@@ -149,9 +153,6 @@ export default function AddChildWizardScreen() {
   const [wakeH, setWakeH] = useState('7');
   const [wakeM, setWakeM] = useState('00');
   const [wakeP, setWakeP] = useState<TimeP>('AM');
-  const [useMinSleep, setUseMinSleep] = useState(false);
-  const [minSleepH, setMinSleepH] = useState('10');
-  const [minSleepM, setMinSleepM] = useState('0');
 
   // ── Meals ──
   const [bfH, setBfH] = useState('7'); const [bfM, setBfM] = useState('00'); const [bfP, setBfP] = useState<TimeP>('AM');
@@ -165,18 +166,11 @@ export default function AddChildWizardScreen() {
   const [lrnH, setLrnH] = useState('2'); const [lrnM, setLrnM] = useState('00'); const [lrnP, setLrnP] = useState<TimeP>('PM');
 
   // ── Computed ──
-  const ageMonths = getAgeMonths(dob);
+  const dobStr = dob ? dob.toISOString().slice(0, 10) : '';
+  const ageMonths = getAgeMonths(dobStr);
   const ageYears = Math.floor(ageMonths / 12);
   const isRequired = ageYears >= 2 && ageYears <= 5;
   const sleepRec = isRequired ? getSleepRecommendation(ageYears) : null;
-
-  // Prefill min sleep when toggle enabled
-  useEffect(() => {
-    if (useMinSleep && sleepRec) {
-      setMinSleepH(String(sleepRec.minHours));
-      setMinSleepM('0');
-    }
-  }, [useMinSleep, sleepRec]);
 
   // Live BMI preview (body step)
   useEffect(() => {
@@ -194,13 +188,7 @@ export default function AddChildWizardScreen() {
     setBmiResult(res);
   }, [height, weight, gender, ageMonths]);
 
-  // Quick age set
-  const setQuickAge = (years: number) => {
-    const date = new Date();
-    date.setFullYear(date.getFullYear() - years);
-    setDob(date.toISOString().slice(0, 10));
-    setShowQuickAges(false);
-  };
+  // Date picker handled by DatePicker component
 
   // Photo picker + immediate upload
   const handlePickPhoto = async () => {
@@ -240,13 +228,12 @@ export default function AddChildWizardScreen() {
           setError('Name must be at least 2 characters');
           return false;
         }
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
-          setError('Date of birth must be in format YYYY-MM-DD');
+        if (!dob) {
+          setError('Please select date of birth');
           return false;
         }
-        const dobDate = new Date(dob);
         const today = new Date();
-        if (dobDate > today) {
+        if (dob > today) {
           setError('Date of birth cannot be in the future');
           return false;
         }
@@ -301,6 +288,14 @@ export default function AddChildWizardScreen() {
     }
   };
 
+  const handleBack = () => {
+    const order: StepKey[] = ['profile', 'body', 'sleep', 'meals', 'active'];
+    const idx = order.indexOf(step);
+    if (idx > 0) {
+      setStep(order[idx - 1]);
+    }
+  };
+
   const handleSkipActive = () => {
     setStep('active'); // bypass validation via Complete flow
     handleSubmit();
@@ -317,7 +312,12 @@ export default function AddChildWizardScreen() {
       if (!user?.id) throw new Error('You must be signed in');
 
       // 1. Create child profile (avatarUrl may be null)
-      const child = await createChild(name.trim(), dob, user.id, avatarUrl ?? undefined);
+      const child = await createChild(
+        name.trim(),
+        dob!.toISOString().slice(0, 10),
+        user.id,
+        avatarUrl || undefined
+      );
 
       // 2. Compute BMI if age-appropriate
       let bmiVal: number | null = null;
@@ -348,16 +348,11 @@ export default function AddChildWizardScreen() {
       };
       const updatedChild = await updateChildRoutine(child.id, routine);
 
-      // 4. Min sleep setting
-      if (useMinSleep && minSleepH && minSleepM) {
-        const total = parseInt(minSleepH) * 60 + parseInt(minSleepM);
-        await updateChildSettings(child.id, { min_sleep_minutes: total, max_screen_time_minutes: null });
-      }
+      // 4. Save min sleep setting if enabled (ages 2-5)
+      // REMOVED: minimum sleep UI removed; auto-calculated from bed/wake times
 
-      // 5. Notifications (use child with routine)
+      // 5. Notifications (use child with routine data)
       await scheduleChildNotifications(updatedChild);
-
-      // 6. Navigate
       await loadChildren();
       const { Keyboard } = require('react-native');
       Keyboard.dismiss();
@@ -373,90 +368,162 @@ export default function AddChildWizardScreen() {
   const stepIndex = STEPS.findIndex(s => s.key === step);
   const renderStepDots = () => (
     <View style={styles.stepDots}>
-      {STEPS.map((s, i) => (
-        <View
-          key={s.key}
-          style={[
-            styles.dot,
-            i <= stepIndex ? styles.dotActive : styles.dotInactive,
-          ]}
-        >
-          {i < stepIndex ? (
-            <Ionicons name="checkmark" size={10} color="#FFF" />
-          ) : null}
-        </View>
-      ))}
+      {STEPS.map((s, i) => {
+        const isDone = i < stepIndex;
+        const isActive = i === stepIndex;
+        return (
+          <View key={s.key} style={styles.stepTrackRow}>
+            <View style={[
+              styles.stepCircle,
+              isDone && styles.stepCircleDone,
+              isActive && styles.stepCircleActive,
+            ]}>
+              <Text style={[
+                styles.stepEmoji,
+                isDone && styles.stepEmojiDone,
+                isActive && styles.stepEmojiActive,
+              ]}>
+                {isDone ? '✓' : s.emoji}
+              </Text>
+            </View>
+            {i < STEPS.length - 1 && (
+              <Text style={[
+                styles.stepArrow,
+                isDone && styles.stepArrowDone,
+              ]}>→</Text>
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 
-  const renderTimeRow = (
-    label: string,
-    hVal: string,
-    setH: (v: string) => void,
-    mVal: string,
-    setM: (v: string) => void,
-    pVal: TimeP,
-    setP: (v: TimeP) => void,
-    presets: readonly { h: string; m: string; p: TimeP }[]
-  ) => (
-    <View style={styles.timeSection}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.presetGrid}>
-        {presets.map((preset, i) => (
-          <TouchableOpacity
-            key={i}
-            style={[
-              styles.presetBtn,
-              hVal === preset.h && mVal === preset.m && pVal === preset.p && styles.presetBtnActive,
-            ]}
-            onPress={() => {
-              setH(preset.h);
-              setM(preset.m);
-              setP(preset.p);
-            }}
-          >
-            <Text style={[styles.presetBtnText, hVal === preset.h && mVal === preset.m && pVal === preset.p && styles.presetBtnTextActive]}>
-              {preset.h}:{preset.m} {preset.p}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      <View style={styles.timeRow}>
-        <View style={styles.timeCol}>
-          <Text style={styles.timeColLabel}>Hour</Text>
-          <TextInput
-            value={hVal}
-            onChangeText={setH}
-            keyboardType="number-pad"
-            style={styles.timeInput}
-            maxLength={2}
-            placeholder="HH"
-          />
+  // ── Compact time block (replaces renderTimeRow) ──
+  const CompactTimeBlock = ({
+    label,
+    hour,
+    minute,
+    period,
+    onHourChange,
+    onMinuteChange,
+    onPeriodChange,
+    presets,
+  }: {
+    label: string;
+    hour: string;
+    minute: string;
+    period: TimeP;
+    onHourChange: (v: string) => void;
+    onMinuteChange: (v: string) => void;
+    onPeriodChange: (v: TimeP) => void;
+    presets: readonly { h: string; m: string; p: TimeP }[];
+  }) => (
+    <View style={styles.compactTimeRow}>
+      {/* Label */}
+      <Text style={styles.compactTimeLabel}>{label}</Text>
+
+      {/* Right side: presets + digits */}
+      <View style={styles.compactTimeRight}>
+        {/* Presets */}
+        <View style={styles.compactPresetRow}>
+          {presets.slice(0, 3).map((preset, i) => (
+            <TouchableOpacity
+              key={i}
+              style={[
+                styles.compactPresetBtn,
+                hour === preset.h && minute === preset.m && period === preset.p && styles.compactPresetBtnActive,
+              ]}
+              onPress={() => {
+                onHourChange(preset.h);
+                onMinuteChange(preset.m);
+                onPeriodChange(preset.p);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.compactPresetText,
+                hour === preset.h && minute === preset.m && period === preset.p && styles.compactPresetTextActive,
+              ]}>
+                {preset.h}:{preset.m}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-        <View style={styles.timeCol}>
-          <Text style={styles.timeColLabel}>Min</Text>
-          <TextInput
-            value={mVal}
-            onChangeText={setM}
-            keyboardType="number-pad"
-            style={styles.timeInput}
-            maxLength={2}
-            placeholder="MM"
-          />
-        </View>
-        <View style={styles.ampmRow}>
-          <TouchableOpacity
-            style={[styles.ampmBtn, pVal === 'AM' && styles.ampmBtnActive]}
-            onPress={() => setP('AM')}
-          >
-            <Text style={[styles.ampmBtnText, pVal === 'AM' && styles.ampmBtnTextActive]}>AM</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.ampmBtn, pVal === 'PM' && styles.ampmBtnActive]}
-            onPress={() => setP('PM')}
-          >
-            <Text style={[styles.ampmBtnText, pVal === 'PM' && styles.ampmBtnTextActive]}>PM</Text>
-          </TouchableOpacity>
+
+        {/* Big digits */}
+        <View style={styles.compactDigitRow}>
+          <View style={styles.compactDigitCol}>
+            <TouchableOpacity
+              style={styles.compactStepper}
+              activeOpacity={0.6}
+              onPress={() => onHourChange(String(Math.min(12, (parseInt(hour) || 0) + 1)))}
+            >
+              <Ionicons name="add" size={14} color="#FF7F60" />
+            </TouchableOpacity>
+            <RNTextInput
+              value={hour}
+              onChangeText={(t) => {
+                const n = Math.min(12, Math.max(1, parseInt(t.replace(/[^0-9]/g, '')) || 0));
+                onHourChange(String(n));
+              }}
+              keyboardType="numeric"
+              style={styles.compactDigit}
+              maxLength={2}
+              selectTextOnFocus
+              placeholder="12"
+              placeholderTextColor="#CBD5E1"
+            />
+            <TouchableOpacity
+              style={styles.compactStepper}
+              activeOpacity={0.6}
+              onPress={() => onHourChange(String(Math.max(1, (parseInt(hour) || 0) - 1)))}
+            >
+              <Ionicons name="remove" size={14} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.compactColon}>:</Text>
+          <View style={styles.compactDigitCol}>
+            <TouchableOpacity
+              style={styles.compactStepper}
+              activeOpacity={0.6}
+              onPress={() => onMinuteChange(String(Math.min(59, (parseInt(minute) || 0) + 5)))}
+            >
+              <Ionicons name="add" size={14} color="#FF7F60" />
+            </TouchableOpacity>
+            <RNTextInput
+              value={minute}
+              onChangeText={(t) => {
+                const n = Math.min(59, Math.max(0, parseInt(t.replace(/[^0-9]/g, '')) || 0));
+                onMinuteChange(String(n).padStart(2, '0'));
+              }}
+              keyboardType="numeric"
+              style={styles.compactDigit}
+              maxLength={2}
+              selectTextOnFocus
+              placeholder="00"
+              placeholderTextColor="#CBD5E1"
+            />
+            <TouchableOpacity
+              style={styles.compactStepper}
+              activeOpacity={0.6}
+              onPress={() => onMinuteChange(String(Math.max(0, (parseInt(minute) || 0) - 5)))}
+            >
+              <Ionicons name="remove" size={14} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.compactPeriodCol}>
+            {(['AM', 'PM'] as const).map((p) => (
+              <TouchableOpacity
+                key={p}
+                style={[styles.compactPeriodBtn, period === p && styles.compactPeriodBtnActive]}
+                onPress={() => onPeriodChange(p)}
+              >
+                <Text style={[styles.compactPeriodText, period === p && styles.compactPeriodTextActive]}>
+                  {p}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       </View>
     </View>
@@ -468,71 +535,8 @@ export default function AddChildWizardScreen() {
       <Text style={styles.stepTitle}>Basic Info</Text>
       <Text style={styles.stepSubtitle}>Tell us about your child.</Text>
 
-      {/* Name */}
-      <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Child's Name</Text>
-        <View style={styles.inputWrapper}>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Emma"
-            autoCapitalize="words"
-            style={styles.input}
-            underlineColorAndroid="transparent"
-            activeUnderlineColor="transparent"
-            placeholderTextColor="#94A3B8"
-            contentStyle={styles.inputContent}
-            returnKeyType="next"
-          />
-        </View>
-      </View>
-
-      {/* DOB */}
-      <View style={styles.fieldGroup}>
-        <View style={styles.labelRow}>
-          <Text style={styles.label}>Date of Birth</Text>
-          <TouchableOpacity onPress={() => setShowQuickAges(!showQuickAges)}>
-            <Text style={styles.quickSelect}>Quick select</Text>
-          </TouchableOpacity>
-        </View>
-        {showQuickAges && (
-          <View style={styles.quickAgesRow}>
-            {['1', '3', '5', '7', '10'].map((y) => (
-              <TouchableOpacity
-                key={y}
-                onPress={() => setQuickAge(Number(y))}
-                style={styles.ageChip}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.ageChipText}>{y} yr{Number(y) > 1 ? 's' : ''}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-        <View style={[styles.inputWrapper, error && styles.inputError]}>
-          <TextInput
-            value={dob}
-            onChangeText={setDob}
-            placeholder="YYYY-MM-DD"
-            keyboardType="numbers-and-punctuation"
-            style={styles.input}
-            underlineColorAndroid="transparent"
-            activeUnderlineColor="transparent"
-            placeholderTextColor="#94A3B8"
-            contentStyle={styles.inputContent}
-            maxLength={10}
-          />
-          {dob.length > 0 && (
-            <TouchableOpacity onPress={() => setDob('')} style={styles.clearBtn}>
-              <Ionicons name="close-circle" size={18} color="#CBD5E1" />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
       {/* Avatar */}
       <View style={styles.fieldGroup}>
-        <Text style={styles.label}>Avatar</Text>
         <View style={styles.avatarSection}>
           <View style={styles.avatarCircle}>
             {uploading ? (
@@ -552,6 +556,43 @@ export default function AddChildWizardScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Name */}
+      <View style={styles.fieldGroup}>
+        <Text style={styles.label}>Child's Name</Text>
+        <View style={styles.inputWrapper}>
+          <RNTextInput
+            value={name}
+            onChangeText={setName}
+            placeholder="e.g. Emma"
+            autoCapitalize="words"
+            style={styles.rnInput}
+            placeholderTextColor="#94A3B8"
+            returnKeyType="next"
+          />
+        </View>
+      </View>
+
+      {/* Date of Birth */}
+      <View style={styles.fieldGroup}>
+        <Text style={styles.label}>Date of Birth</Text>
+        <DatePicker
+          value={dob}
+          onChange={(d) => { setDob(d); }}
+          maximumDate={new Date()}
+        >
+          <View style={[styles.inputWrapper, !dob && styles.inputError]}>
+            <Text style={{ flex: 1, fontSize: 14, lineHeight: 52, color: dob ? '#0F172A' : '#94A3B8', includeFontPadding: false }}>
+              {dob ? formatDob(dob) : 'Select date'}
+            </Text>
+            {dob && (
+              <TouchableOpacity onPress={() => setDob(null)} style={styles.clearBtn}>
+                <Ionicons name="close-circle" size={18} color="#CBD5E1" />
+              </TouchableOpacity>
+            )}
+          </View>
+        </DatePicker>
+      </View>
     </View>
   );
 
@@ -566,11 +607,14 @@ export default function AddChildWizardScreen() {
         {(['male', 'female'] as const).map((g) => (
           <TouchableOpacity
             key={g}
-            style={[styles.chip, gender === g && styles.chipActive]}
+            style={[
+              styles.chip,
+              gender === g && (g === 'male' ? styles.chipActiveMale : styles.chipActiveFemale),
+            ]}
             onPress={() => setGender(g)}
           >
             <Text style={[styles.chipText, gender === g && styles.chipTextActive]}>
-              {g === 'male' ? 'Boy' : 'Girl'}
+              {g === 'male' ? '♂ Boy' : '♀ Girl'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -580,16 +624,13 @@ export default function AddChildWizardScreen() {
       <View style={[styles.fieldGroup, { marginTop: 16 }]}>
         <Text style={styles.label}>Height (cm)</Text>
         <View style={styles.inputWrapper}>
-          <TextInput
+          <RNTextInput
             value={height}
             onChangeText={setHeight}
             placeholder="e.g. 110"
             keyboardType="number-pad"
-            style={styles.input}
-            underlineColorAndroid="transparent"
-            activeUnderlineColor="transparent"
+            style={styles.rnInput}
             placeholderTextColor="#94A3B8"
-            contentStyle={styles.inputContent}
           />
         </View>
       </View>
@@ -598,24 +639,27 @@ export default function AddChildWizardScreen() {
       <View style={styles.fieldGroup}>
         <Text style={styles.label}>Weight (kg)</Text>
         <View style={styles.inputWrapper}>
-          <TextInput
+          <RNTextInput
             value={weight}
             onChangeText={setWeight}
             placeholder="e.g. 18"
             keyboardType="number-pad"
-            style={styles.input}
-            underlineColorAndroid="transparent"
-            activeUnderlineColor="transparent"
+            style={styles.rnInput}
             placeholderTextColor="#94A3B8"
-            contentStyle={styles.inputContent}
           />
         </View>
       </View>
 
       {/* BMI Preview */}
-      <View style={styles.bmiPreview}>
+      <View style={[
+        styles.bmiPreview,
+        bmiResult && { backgroundColor: BMI_COLORS[bmiResult.category].bg },
+      ]}>
         {bmiResult ? (
-          <Text style={styles.bmiText}>
+          <Text style={[
+            styles.bmiText,
+            { color: BMI_COLORS[bmiResult.category].text },
+          ]}>
             BMI: {bmiResult.bmi} ({bmiResult.percentile}th percentile, {bmiResult.label})
           </Text>
         ) : ageMonths >= 24 && ageMonths <= 60 ? (
@@ -627,72 +671,211 @@ export default function AddChildWizardScreen() {
     </View>
   );
 
-  const renderSleep = () => (
-    <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Sleep Schedule</Text>
-      <Text style={styles.stepSubtitle}>Set regular bed and wake times.</Text>
+  const renderSleep = () => {
+    // Calculate sleep duration
+    const calcSleepMinutes = () => {
+      let bH = parseInt(bedH) || 0;
+      let bM = parseInt(bedM) || 0;
+      let wH = parseInt(wakeH) || 0;
+      let wM = parseInt(wakeM) || 0;
+      if (bedP === 'PM' && bH !== 12) bH += 12;
+      if (bedP === 'AM' && bH === 12) bH = 0;
+      if (wakeP === 'PM' && wH !== 12) wH += 12;
+      if (wakeP === 'AM' && wH === 12) wH = 0;
+      let bedTotal = bH * 60 + bM;
+      let wakeTotal = wH * 60 + wM;
+      if (wakeTotal <= bedTotal) wakeTotal += 24 * 60;
+      return wakeTotal - bedTotal;
+    };
+    const totalSleepMins = calcSleepMinutes();
+    const sleepDurH = Math.floor(totalSleepMins / 60);
+    const sleepDurM = totalSleepMins % 60;
+    const sleepDurText = totalSleepMins > 0
+      ? `${sleepDurH > 0 ? `${sleepDurH}h ` : ''}${sleepDurM > 0 ? `${sleepDurM}m` : ''}`.trim()
+      : '--';
+    const belowRec = isRequired && sleepRec && totalSleepMins > 0 && totalSleepMins < sleepRec.minHours * 60;
 
-      {/* Dual column */}
-      <View style={styles.sleepRow}>
-        {/* Bedtime */}
-        <View style={styles.sleepCol}>
-          <Text style={styles.label}>Bedtime</Text>
-          {renderTimeRow('', bedH, setBedH, bedM, setBedM, bedP, setBedP, QUICK_TIMES.bed)}
+    const SleepTimeBlock = ({
+      label,
+      hour,
+      minute,
+      period,
+      onHourChange,
+      onMinuteChange,
+      onPeriodChange,
+      presets,
+    }: {
+      label: string;
+      hour: string;
+      minute: string;
+      period: TimeP;
+      onHourChange: (v: string) => void;
+      onMinuteChange: (v: string) => void;
+      onPeriodChange: (v: TimeP) => void;
+      presets: readonly { h: string; m: string; p: TimeP }[];
+    }) => (
+      <View style={styles.sleepTimeBlock}>
+        <Text style={styles.sleepTimeBlockLabel}>{label}</Text>
+        {/* Presets */}
+        <View style={styles.sleepPresetRow}>
+          {presets.map((preset, i) => (
+            <TouchableOpacity
+              key={i}
+              style={[
+                styles.sleepPresetBtn,
+                hour === preset.h && minute === preset.m && period === preset.p && styles.sleepPresetBtnActive,
+              ]}
+              onPress={() => {
+                onHourChange(preset.h);
+                onMinuteChange(preset.m);
+                onPeriodChange(preset.p);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.sleepPresetBtnText,
+                hour === preset.h && minute === preset.m && period === preset.p && styles.sleepPresetBtnTextActive,
+              ]}>
+                {preset.h}:{preset.m} {preset.p}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-
-        <View style={styles.sleepDivider} />
-
-        {/* Wake-up */}
-        <View style={styles.sleepCol}>
-          <Text style={styles.label}>Wake-up</Text>
-          {renderTimeRow('', wakeH, setWakeH, wakeM, setWakeM, wakeP, setWakeP, QUICK_TIMES.wake)}
+        {/* Big digit inputs */}
+        <View style={styles.sleepDigitRow}>
+          <View style={styles.sleepDigitCol}>
+            <TouchableOpacity
+              style={styles.sleepStepperBtn}
+              activeOpacity={0.6}
+              onPress={() => onHourChange(String(Math.min(12, (parseInt(hour) || 0) + 1)))}
+            >
+              <Ionicons name="add" size={18} color="#FF7F60" />
+            </TouchableOpacity>
+            <RNTextInput
+              value={hour}
+              onChangeText={(t) => {
+                const n = Math.min(12, Math.max(1, parseInt(t.replace(/[^0-9]/g, '')) || 0));
+                onHourChange(String(n));
+              }}
+              keyboardType="numeric"
+              style={styles.sleepDigitText}
+              maxLength={2}
+              selectTextOnFocus
+              placeholder="12"
+              placeholderTextColor="#CBD5E1"
+            />
+            <TouchableOpacity
+              style={styles.sleepStepperBtn}
+              activeOpacity={0.6}
+              onPress={() => onHourChange(String(Math.max(1, (parseInt(hour) || 0) - 1)))}
+            >
+              <Ionicons name="remove" size={18} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.sleepDigitColon}>:</Text>
+          <View style={styles.sleepDigitCol}>
+            <TouchableOpacity
+              style={styles.sleepStepperBtn}
+              activeOpacity={0.6}
+              onPress={() => onMinuteChange(String(Math.min(59, (parseInt(minute) || 0) + 5)))}
+            >
+              <Ionicons name="add" size={18} color="#FF7F60" />
+            </TouchableOpacity>
+            <RNTextInput
+              value={minute}
+              onChangeText={(t) => {
+                const n = Math.min(59, Math.max(0, parseInt(t.replace(/[^0-9]/g, '')) || 0));
+                onMinuteChange(String(n).padStart(2, '0'));
+              }}
+              keyboardType="numeric"
+              style={styles.sleepDigitText}
+              maxLength={2}
+              selectTextOnFocus
+              placeholder="00"
+              placeholderTextColor="#CBD5E1"
+            />
+            <TouchableOpacity
+              style={styles.sleepStepperBtn}
+              activeOpacity={0.6}
+              onPress={() => onMinuteChange(String(Math.max(0, (parseInt(minute) || 0) - 5)))}
+            >
+              <Ionicons name="remove" size={18} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.sleepPeriodCol}>
+            {(['AM', 'PM'] as const).map((p) => (
+              <TouchableOpacity
+                key={p}
+                style={[styles.sleepPeriodBtn, period === p && styles.sleepPeriodBtnActive]}
+                onPress={() => onPeriodChange(p)}
+              >
+                <Text style={[styles.sleepPeriodText, period === p && styles.sleepPeriodTextActive]}>
+                  {p}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       </View>
+    );
 
-      {/* Minimum Sleep */}
-      {isRequired && (
-        <>
-          <View style={styles.fieldDivider} />
-          <View style={styles.minSleepSection}>
-            <View style={styles.minSleepToggle}>
-              <Text style={styles.minSleepToggleLabel}>Minimum Sleep</Text>
-              <TouchableOpacity
-                style={[styles.toggle, useMinSleep && styles.toggleActive]}
-                onPress={() => setUseMinSleep(!useMinSleep)}
-              >
-                <View style={[styles.toggleKnob, useMinSleep && styles.toggleKnobActive]} />
-              </TouchableOpacity>
-            </View>
-            {useMinSleep && (
-              <View style={styles.minSleepRow}>
-                <TextInput
-                  value={minSleepH}
-                  onChangeText={setMinSleepH}
-                  keyboardType="number-pad"
-                  style={styles.minSleepInput}
-                  maxLength={2}
-                  placeholder="hrs"
-                />
-                <Text style={styles.minSleepUnit}>hrs</Text>
-                <TextInput
-                  value={minSleepM}
-                  onChangeText={setMinSleepM}
-                  keyboardType="number-pad"
-                  style={styles.minSleepInput}
-                  maxLength={2}
-                  placeholder="min"
-                />
-                <Text style={styles.minSleepUnit}>min</Text>
-              </View>
-            )}
-            <Text style={styles.minSleepHint}>
-              Recommended: {sleepRec?.label} for ages {ageYears}–{ageYears + 1}
+    return (
+      <View style={styles.stepContent}>
+        <Text style={styles.stepTitle}>Sleep Schedule</Text>
+        <Text style={styles.stepSubtitle}>Set regular bed and wake times.</Text>
+
+        <View style={styles.sleepRow}>
+          <SleepTimeBlock
+            label="Bedtime"
+            hour={bedH}
+            minute={bedM}
+            period={bedP}
+            onHourChange={setBedH}
+            onMinuteChange={setBedM}
+            onPeriodChange={setBedP}
+            presets={QUICK_TIMES.bed}
+          />
+
+          <View style={styles.sleepDivider} />
+
+          <SleepTimeBlock
+            label="Wake-up"
+            hour={wakeH}
+            minute={wakeM}
+            period={wakeP}
+            onHourChange={setWakeH}
+            onMinuteChange={setWakeM}
+            onPeriodChange={setWakeP}
+            presets={QUICK_TIMES.wake}
+          />
+        </View>
+
+        {/* Sleep duration + warning */}
+        <View style={styles.sleepDurationCard}>
+          <View style={styles.sleepDurationRow}>
+            <Ionicons name="time-outline" size={18} color="#94A3B8" />
+            <Text style={styles.sleepDurationLabel}>Sleep Duration</Text>
+            <Text style={[styles.sleepDurationValue, belowRec && styles.sleepDurationValueWarning]}>
+              {sleepDurText}
             </Text>
           </View>
-        </>
-      )}
-    </View>
-  );
+          {belowRec && sleepRec && (
+            <View style={styles.sleepWarningRow}>
+              <Ionicons name="warning-outline" size={14} color="#EA580C" />
+              <Text style={styles.sleepWarningText}>
+                Below recommended {sleepRec.label} for age {ageYears}
+              </Text>
+            </View>
+          )}
+          {isRequired && sleepRec && !belowRec && totalSleepMins > 0 && (
+            <Text style={styles.sleepRecText}>
+              Recommended: {sleepRec.label} for ages {ageYears}–{ageYears + 1}
+            </Text>
+          )}
+        </View>
+      </View>
+    );
+  };
 
   const renderMeals = () => (
     <View style={styles.stepContent}>
@@ -706,7 +889,16 @@ export default function AddChildWizardScreen() {
         { label: 'Dinner', h: diH, setH: setDiH, m: diM, setM: setDiM, p: diP, setP: setDiP, presets: QUICK_TIMES.dinner },
       ].map((meal, i) => (
         <View key={i} style={styles.mealRow}>
-          {renderTimeRow(meal.label, meal.h, meal.setH, meal.m, meal.setM, meal.p, meal.setP, meal.presets)}
+          <CompactTimeBlock
+            label={meal.label}
+            hour={meal.h}
+            minute={meal.m}
+            period={meal.p}
+            onHourChange={meal.setH}
+            onMinuteChange={meal.setM}
+            onPeriodChange={meal.setP}
+            presets={meal.presets}
+          />
         </View>
       ))}
     </View>
@@ -727,7 +919,16 @@ export default function AddChildWizardScreen() {
         { label: 'Learning', h: lrnH, setH: setLrnH, m: lrnM, setM: setLrnM, p: lrnP, setP: setLrnP, presets: QUICK_TIMES.learn },
       ].map((act, i) => (
         <View key={i} style={styles.mealRow}>
-          {renderTimeRow(act.label, act.h, act.setH, act.m, act.setM, act.p, act.setP, act.presets)}
+          <CompactTimeBlock
+            label={act.label}
+            hour={act.h}
+            minute={act.m}
+            period={act.p}
+            onHourChange={act.setH}
+            onMinuteChange={act.setM}
+            onPeriodChange={act.setP}
+            presets={act.presets}
+          />
         </View>
       ))}
 
@@ -752,11 +953,17 @@ export default function AddChildWizardScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={20} color="#0F172A" />
-          </TouchableOpacity>
+          {stepIndex > 0 ? (
+            <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
+              <Ionicons name="arrow-back" size={20} color="#0F172A" />
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 40 }} />
+          )}
           <Text style={styles.headerTitle}>Add Child</Text>
-          <View style={{ width: 40 }} />
+          <TouchableOpacity onPress={() => router.back()} style={styles.exitBtn}>
+            <Ionicons name="close" size={20} color="#64748B" />
+          </TouchableOpacity>
         </View>
 
         {/* Step indicator */}
@@ -780,7 +987,7 @@ export default function AddChildWizardScreen() {
         {/* Bottom button */}
         <View style={styles.buttonWrapper}>
           <TouchableOpacity
-            onPress={step === 'active' && !isRequired ? handleSkipActive : handleNext}
+            onPress={step === 'active' && isRequired ? handleSubmit : step === 'active' && !isRequired ? handleSkipActive : handleNext}
             disabled={loading}
             activeOpacity={0.85}
             style={[
@@ -856,9 +1063,17 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+  exitBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
   },
   headerTitle: {
     fontSize: 17,
@@ -868,19 +1083,50 @@ const styles = StyleSheet.create({
   stepDots: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 8,
+    alignItems: 'center',
     marginVertical: 12,
   },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+  stepTrackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  dotActive: {
+  stepCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepCircleActive: {
+    borderColor: '#FF7F60',
+    backgroundColor: '#FFF0ED',
+  },
+  stepCircleDone: {
+    borderColor: '#FF7F60',
     backgroundColor: '#FF7F60',
   },
-  dotInactive: {
-    backgroundColor: '#E2E8F0',
+  stepEmoji: {
+    fontSize: 16,
+  },
+  stepEmojiActive: {
+    fontSize: 18,
+  },
+  stepEmojiDone: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  stepArrow: {
+    fontSize: 16,
+    color: '#CBD5E1',
+    marginHorizontal: 6,
+    fontWeight: '500',
+  },
+  stepArrowDone: {
+    color: '#FF7F60',
   },
   stepLabel: {
     textAlign: 'center',
@@ -961,6 +1207,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     height: 52,
     color: '#0F172A',
+  },
+  rnInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0F172A',
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    margin: 0,
+    includeFontPadding: false,
   },
   inputContent: {
     paddingHorizontal: 0,
@@ -1049,7 +1304,7 @@ const styles = StyleSheet.create({
     fontSize: 48,
   },
   changeAvatarBtn: {
-    paddingVertical: 8,
+    paddingVertical: 4,
     paddingHorizontal: 16,
   },
   changeAvatarText: {
@@ -1061,8 +1316,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 8,
-    paddingVertical: 8,
+    marginTop: 2,
+    paddingVertical: 4,
   },
   uploadPhotoText: {
     color: '#FF7F60',
@@ -1084,9 +1339,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEFBF6',
     alignItems: 'center',
   },
-  chipActive: {
-    backgroundColor: '#FF7F60',
-    borderColor: '#FF7F60',
+  chipActiveMale: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  chipActiveFemale: {
+    backgroundColor: '#EC4899',
+    borderColor: '#EC4899',
   },
   chipText: {
     fontWeight: '600',
@@ -1133,57 +1392,259 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 8,
   },
-  timeRow: {
+
+  // ── Compact time block (meals / active) ──
+  compactTimeRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-    marginTop: 8,
-  },
-  timeCol: {
     alignItems: 'center',
-    flex: 1,
-  },
-  timeColLabel: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginBottom: 4,
-  },
-  timeInput: {
-    width: 56,
-    height: 44,
-    borderRadius: 12,
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#FFFDFF',
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    backgroundColor: '#FEFBF6',
-    textAlign: 'center',
-    fontSize: 16,
+  },
+  compactTimeLabel: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#0F172A',
+    width: 72,
   },
-  ampmRow: {
+  compactTimeRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  compactPresetRow: {
     flexDirection: 'row',
     gap: 4,
+    marginRight: 6,
   },
-  ampmBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
+  compactPresetBtn: {
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    borderRadius: 7,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     backgroundColor: '#FEFBF6',
   },
-  ampmBtnActive: {
+  compactPresetBtnActive: {
     backgroundColor: '#FF7F60',
     borderColor: '#FF7F60',
   },
-  ampmBtnText: {
+  compactPresetText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  compactPresetTextActive: {
+    color: '#FFF',
+  },
+  compactDigitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 1,
+  },
+  compactDigitCol: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  compactStepper: {
+    width: 28,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compactDigit: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+    width: 36,
+    paddingVertical: 1,
+    borderBottomWidth: 2,
+    borderBottomColor: '#E2E8F0',
+  },
+  compactColon: {
+    fontSize: 18,
+    fontWeight: '300',
+    color: '#CBD5E1',
+    marginBottom: 14,
+  },
+  compactPeriodCol: {
+    marginLeft: 2,
+    gap: 2,
+    marginBottom: 14,
+  },
+  compactPeriodBtn: {
+    paddingHorizontal: 5,
+    paddingVertical: 4,
+    borderRadius: 5,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  compactPeriodBtnActive: {
+    backgroundColor: '#FFF0ED',
+    borderColor: '#FF7F60',
+  },
+  compactPeriodText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  compactPeriodTextActive: {
+    color: '#FF7F60',
+  },
+
+  // ── Sleep step: big digit time blocks ──
+  sleepTimeBlock: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  sleepTimeBlockLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: '#64748B',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  ampmBtnTextActive: {
+  sleepPresetRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 10,
+  },
+  sleepPresetBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FEFBF6',
+  },
+  sleepPresetBtnActive: {
+    backgroundColor: '#FF7F60',
+    borderColor: '#FF7F60',
+  },
+  sleepPresetBtnText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  sleepPresetBtnTextActive: {
     color: '#FFF',
   },
+  sleepDigitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  sleepDigitCol: {
+    alignItems: 'center',
+    gap: 3,
+  },
+  sleepStepperBtn: {
+    width: 36,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sleepDigitText: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+    width: 48,
+    paddingVertical: 2,
+    borderBottomWidth: 2,
+    borderBottomColor: '#E2E8F0',
+  },
+  sleepDigitColon: {
+    fontSize: 24,
+    fontWeight: '300',
+    color: '#CBD5E1',
+    marginBottom: 20,
+  },
+  sleepPeriodCol: {
+    marginLeft: 4,
+    gap: 3,
+    marginBottom: 20,
+  },
+  sleepPeriodBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  sleepPeriodBtnActive: {
+    backgroundColor: '#FFF0ED',
+    borderColor: '#FF7F60',
+  },
+  sleepPeriodText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  sleepPeriodTextActive: {
+    color: '#FF7F60',
+  },
+  sleepDurationCard: {
+    marginTop: 16,
+    padding: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  sleepDurationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sleepDurationLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  sleepDurationValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  sleepDurationValueWarning: {
+    color: '#EA580C',
+  },
+  sleepWarningRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#FECACA',
+  },
+  sleepWarningText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#EA580C',
+  },
+  sleepRecText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
+
   presetGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1269,6 +1730,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#0F172A',
+  },
+  rnMinSleepInput: {
+    width: 56,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FEFBF6',
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0F172A',
+    padding: 0,
+    margin: 0,
   },
   minSleepUnit: {
     fontSize: 13,
