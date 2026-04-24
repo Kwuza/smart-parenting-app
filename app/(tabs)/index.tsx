@@ -3,9 +3,10 @@ import { View, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, FlatLis
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useAuth } from '../../stores/auth';
 import { cancelScheduledActivityNotifications, scheduleScheduledActivityNotifications } from '../../lib/notifications';
-import { getTodayActivities, getScheduledActivities, logActivity, deleteScheduledActivity, updateScheduledActivity, Activity, ActivityType, ScheduledActivity } from '../../lib/api';
+import { getTodayActivities, getScheduledActivities, logActivity, deleteScheduledActivity, updateScheduledActivity, Activity, ActivityType, ScheduledActivity, getAgeYears } from '../../lib/api';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -44,8 +45,9 @@ function getActivityLabel(type: string, value: Record<string, any>): string {
       return `Nap — ${dur}${value.quality ? ` (${value.quality})` : ''}`;
     case 'meal': {
       const meal = value.meal_type || 'meal';
+      const mealTime = value.start_time ? ` @ ${value.start_time}` : '';
       const foods = value.food_groups?.length ? ` · ${value.food_groups.join(', ')}` : '';
-      return `${meal.charAt(0).toUpperCase() + meal.slice(1)}${value.quality ? ` — ${value.quality}` : ''}${foods}`;
+      return `${meal.charAt(0).toUpperCase() + meal.slice(1)}${mealTime}${value.quality ? ` — ${value.quality}` : ''}${foods}`;
     }
     case 'physical_activity':
       return `Physical — ${dur}${value.activity ? ` (${value.activity})` : ''}`;
@@ -1071,6 +1073,7 @@ function RecentItem({ activity }: { activity: Activity }) {
 }
 
 export default function DashboardScreen() {
+  const insets = useSafeAreaInsets();
   const { selectedChild, children, loadChildren, selectChild } = useApp();
   const { user } = useAuth();
   const router = useRouter();
@@ -1108,7 +1111,7 @@ export default function DashboardScreen() {
         setUpcomingActivities([]);
       }
     } catch (err) {
-      console.error('Failed to load dashboard:', err);
+      if (__DEV__) console.error('Failed to load dashboard:', err);
       setError('Failed to load dashboard. Pull down to refresh.');
     } finally {
       setLoading(false);
@@ -1140,7 +1143,7 @@ export default function DashboardScreen() {
       await deleteScheduledActivity(id);
       await loadDashboardData();
     } catch (err) {
-      console.error('Failed to delete schedule:', err);
+      if (__DEV__) console.error('Failed to delete schedule:', err);
       setError('Failed to delete schedule. Pull down to refresh.');
     }
   };
@@ -1164,10 +1167,7 @@ export default function DashboardScreen() {
   const hasChild = !!selectedChild;
   const childName = selectedChild?.name || '';
   const age = selectedChild?.date_of_birth
-    ? Math.floor(
-        (Date.now() - new Date(selectedChild.date_of_birth).getTime()) /
-          (365.25 * 24 * 60 * 60 * 1000)
-      )
+    ? getAgeYears(selectedChild.date_of_birth)
     : null;
 
   const stats = calculateStats(todayActivities);
@@ -1181,14 +1181,14 @@ export default function DashboardScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#FEFBF6' }]}>
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#FEFBF6', paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color="#FF7F60" />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -1202,10 +1202,6 @@ export default function DashboardScreen() {
             <Text style={styles.greeting}>{getGreeting()},</Text>
             <Text style={styles.userName}>{userName}</Text>
           </View>
-          <TouchableOpacity style={styles.notifButton} activeOpacity={0.7}>
-            <Ionicons name="notifications-outline" size={22} color="#0F172A" />
-            <View style={styles.notifDot} />
-          </TouchableOpacity>
         </View>
 
         {error ? (
@@ -1236,10 +1232,7 @@ export default function DashboardScreen() {
               {children.map((child) => {
                 const isSelected = child.id === selectedChild?.id;
                 const childAge = child.date_of_birth
-                  ? Math.floor(
-                      (Date.now() - new Date(child.date_of_birth).getTime()) /
-                        (365.25 * 24 * 60 * 60 * 1000)
-                    )
+                  ? getAgeYears(child.date_of_birth)
                   : null;
                 return (
                   <TouchableOpacity
@@ -1455,28 +1448,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
     letterSpacing: -0.5,
-  },
-  notifButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#FFFDFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    position: 'relative',
-  },
-  notifDot: {
-    position: 'absolute',
-    right: 12,
-    top: 12,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#EF4444',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
   },
   errorBanner: {
     flexDirection: 'row',

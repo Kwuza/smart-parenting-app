@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, Switch, Modal, Animated, RefreshControl } from 'react-native';
+import { View, ScrollView, StyleSheet, TouchableOpacity, Switch, Modal, Animated, RefreshControl, Image } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth, useApp } from '../../stores/auth';
 import { scheduleChildNotifications, cancelChildNotifications } from '../../lib/notifications';
-import { Child } from '../../lib/api';
+import { Child, getAgeYears } from '../../lib/api';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -58,18 +59,24 @@ function ChildCard({
   name,
   age,
   color,
+  avatarUrl,
   onEdit,
 }: {
   name: string;
   age: number | null;
   color: string;
+  avatarUrl?: string;
   onEdit?: () => void;
 }) {
   return (
     <TouchableOpacity style={styles.childCard} activeOpacity={0.7} onPress={onEdit}>
-      <View style={[styles.childAvatar, { backgroundColor: `${color}20` }]}>
-        <Text style={[styles.childAvatarText, { color }]}>{name.charAt(0).toUpperCase()}</Text>
-      </View>
+      {avatarUrl ? (
+        <Image source={{ uri: avatarUrl }} style={styles.childAvatarImage} />
+      ) : (
+        <View style={[styles.childAvatar, { backgroundColor: `${color}20` }]}>
+          <Text style={[styles.childAvatarText, { color }]}>{name.charAt(0).toUpperCase()}</Text>
+        </View>
+      )}
       <View style={styles.childInfo}>
         <Text style={styles.childName}>{name}</Text>
         <Text style={styles.childAge}>{age !== null ? `${age} years old` : 'Age not set'}</Text>
@@ -80,13 +87,14 @@ function ChildCard({
 }
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
   const { children, loadChildren } = useApp();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const [allNotificationsDisabled, setAllNotificationsDisabled] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [showGoodbye, setShowGoodbye] = useState(false);
   const goodbyeOpacity = useRef(new Animated.Value(0)).current;
@@ -96,6 +104,7 @@ export default function ProfileScreen() {
 
   const userName = user?.user_metadata?.name || 'Parent';
   const userEmail = user?.email || '';
+  const userAvatarUrl = user?.user_metadata?.avatar_url || '';
   const initials = userName
     .split(' ')
     .map((w: string) => w[0])
@@ -118,6 +127,13 @@ export default function ProfileScreen() {
     return () => { mounted = false; };
   }, []);
 
+  // Reload children when tab gains focus
+  useFocusEffect(
+    useCallback(() => {
+      loadChildren().catch(() => {});
+    }, [loadChildren])
+  );
+
   // Pull-to-refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -136,17 +152,17 @@ export default function ProfileScreen() {
     if (!children.length) return;
     const apply = async () => {
       try {
-        if (allNotificationsDisabled) {
-          await Promise.all(children.map(c => cancelChildNotifications(c.id)));
-        } else {
+        if (notificationsEnabled) {
           await Promise.all(children.map(c => scheduleChildNotifications(c as Child)));
+        } else {
+          await Promise.all(children.map(c => cancelChildNotifications(c.id)));
         }
       } catch (e: any) {
         setError(e?.message || 'Failed to update notifications');
       }
     };
     apply();
-  }, [allNotificationsDisabled]);
+  }, [notificationsEnabled]);
 
   const openChildSettings = (child: Child) => {
     router.push(`/settings/child/${child.id}`);
@@ -185,8 +201,8 @@ export default function ProfileScreen() {
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={[styles.header, { paddingTop: 16 + insets.top }]}>
           <Text style={styles.headerTitle}>Settings</Text>
         </View>
         <View style={styles.centerState}>
@@ -198,9 +214,9 @@ export default function ProfileScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: 16 + insets.top }]}>
         <Text style={styles.headerTitle}>Settings</Text>
       </View>
 
@@ -226,9 +242,13 @@ export default function ProfileScreen() {
       >
         {/* Parent Profile Card */}
         <View style={styles.profileCard}>
-          <View style={styles.profileAvatar}>
-            <Text style={styles.profileAvatarText}>{initials}</Text>
-          </View>
+          {userAvatarUrl ? (
+            <Image source={{ uri: userAvatarUrl }} style={styles.profileAvatarImage} />
+          ) : (
+            <View style={styles.profileAvatar}>
+              <Text style={styles.profileAvatarText}>{initials}</Text>
+            </View>
+          )}
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{userName}</Text>
             <Text style={styles.profileEmail}>{userEmail}</Text>
@@ -290,10 +310,7 @@ export default function ProfileScreen() {
             <>
               {children.map((child, i) => {
                 const age = child.date_of_birth
-                  ? Math.floor(
-                      (Date.now() - new Date(child.date_of_birth).getTime()) /
-                        (365.25 * 24 * 60 * 60 * 1000)
-                    )
+                  ? getAgeYears(child.date_of_birth)
                   : null;
                 return (
                   <ChildCard
@@ -301,6 +318,7 @@ export default function ProfileScreen() {
                     name={child.name}
                     age={age}
                     color={childColors[i % childColors.length]}
+                    avatarUrl={child.avatar_url || undefined}
                     onEdit={() => openChildSettings(child)}
                   />
                 );
@@ -320,17 +338,17 @@ export default function ProfileScreen() {
         {/* Notifications */}
         <Section title="Notifications">
           <Item
-            icon="notifications-off-outline"
+            icon="notifications-outline"
             iconBg="#FFFBEB"
             iconColor="#F59E0B"
             label="All Notifications"
-            description="Turn off all child activity alerts"
+            description="Receive child activity alerts"
             trailing={
               <Switch
-                value={allNotificationsDisabled}
-                onValueChange={setAllNotificationsDisabled}
+                value={notificationsEnabled}
+                onValueChange={setNotificationsEnabled}
                 trackColor={{ false: '#E2E8F0', true: '#93C5FD' }}
-                thumbColor={allNotificationsDisabled ? '#FF7F60' : '#F1F5F9'}
+                thumbColor={notificationsEnabled ? '#FF7F60' : '#F1F5F9'}
               />
             }
           />
@@ -427,6 +445,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  profileAvatarImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
   profileAvatarText: { fontSize: 22, fontWeight: '700', color: '#FFFFFF' },
   profileInfo: { flex: 1 },
   profileName: { fontSize: 18, fontWeight: '700', color: '#0F172A' },
@@ -490,6 +513,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  childAvatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   childAvatarText: { fontSize: 16, fontWeight: '700' },
   childInfo: { flex: 1 },
