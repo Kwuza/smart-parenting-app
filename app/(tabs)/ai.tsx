@@ -4,7 +4,7 @@ import { Text, ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../stores/auth';
 import { getRecommendations, analyzeChild, getActivities, Recommendation } from '../../lib/api';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import ScreenHeader from '../../components/ScreenHeader';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -167,7 +167,8 @@ interface AnalysisSummary {
 }
 
 export default function AIScreen() {
-  const { selectedChild } = useApp();
+  const { selectedChild, children } = useApp();
+  const router = useRouter();
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -258,7 +259,7 @@ export default function AIScreen() {
       setLastRun(new Date());
       await markAnalysisRun(child.id);
     } catch (err) {
-      console.error('Analysis failed:', err);
+      if (__DEV__) console.error('Analysis failed:', err);
       setError('Analysis failed. Pull down to try again.');
     } finally {
       setAnalyzing(false);
@@ -305,7 +306,19 @@ export default function AIScreen() {
     return (
       <View style={styles.empty}>
         <Ionicons name="bulb-outline" size={48} color="#94A3B8" />
-        <Text style={styles.emptyText}>Select a child first</Text>
+        <Text style={styles.emptyText}>
+          {children.length === 0 ? 'Add a child to get AI insights' : 'Select a child first'}
+        </Text>
+        {children.length === 0 && (
+          <TouchableOpacity
+            style={styles.emptyCta}
+            onPress={() => router.push('/child/wizard')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add" size={18} color="#FFF" />
+            <Text style={styles.emptyCtaText}>Add Child</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
@@ -416,6 +429,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: '#94A3B8',
+  },
+  emptyCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FF7F60',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 8,
+  },
+  emptyCtaText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFF',
   },
   scrollContent: {
     padding: 20,

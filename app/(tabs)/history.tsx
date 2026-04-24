@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
-  Dimensions,
+  useWindowDimensions,
   RefreshControl,
 } from 'react-native';
 import { Text } from 'react-native-paper';
@@ -63,6 +63,12 @@ const TYPE_LABELS: Record<string, string> = {
   nap: 'Nap',
 };
 
+interface MonthWeekRange {
+  label: string;
+  start: number;
+  end: number;
+}
+
 // --- Helpers ---
 
 function getTypeConfig(key: string): TypeConfig | undefined {
@@ -91,8 +97,9 @@ function getActivityLabel(type: string, value: Record<string, any>): string {
       return `Nap — ${dur}${value.quality ? ` (${value.quality})` : ''}`;
     case 'meal': {
       const meal = value.meal_type || 'meal';
+      const mealTime = value.start_time ? ` @ ${value.start_time}` : '';
       const foods = value.food_groups?.length ? ` · ${value.food_groups.join(', ')}` : '';
-      return `${meal.charAt(0).toUpperCase() + meal.slice(1)}${value.quality ? ` — ${value.quality}` : ''}${foods}`;
+      return `${meal.charAt(0).toUpperCase() + meal.slice(1)}${mealTime}${value.quality ? ` — ${value.quality}` : ''}${foods}`;
     }
     case 'physical_activity':
       return `Physical — ${dur}${value.activity ? ` (${value.activity})` : ''}`;
@@ -209,6 +216,7 @@ function buildCalendarGrid(year: number, month: number): CalendarDay[] {
 
 export default function HistoryScreen() {
   const { selectedChild, children } = useApp();
+  const { width: windowWidth } = useWindowDimensions();
 
   // Calendar state
   const today = new Date();
@@ -304,7 +312,7 @@ export default function HistoryScreen() {
   // Stats computation
   // ═══════════════════════════════════════════════════════════════
 
-  const screenWidth = Dimensions.get('window').width - 110;
+  const screenWidth = windowWidth - 110;
 
   const chartConfig = useMemo(() => ({
     backgroundColor: '#FFFDFF',
@@ -378,7 +386,7 @@ export default function HistoryScreen() {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     // Build ~7-day chunks with parent-friendly date-range labels
-    const weeks = [];
+    const weeks: MonthWeekRange[] = [];
     const weekSize = 7;
     for (let start = 1; start <= daysInMonth; start += weekSize) {
       const end = Math.min(start + weekSize - 1, daysInMonth);

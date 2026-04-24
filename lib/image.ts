@@ -1,7 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { supabase } from './supabase';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 export interface UploadResult {
   url: string;
@@ -53,12 +53,12 @@ export async function pickAndUploadImage({
     { compress: quality, format: ImageManipulator.SaveFormat.JPEG }
   );
 
-  // Read file as base64 (React Native doesn't support fetch().blob() for local files)
-  console.log('[ImageUpload] Reading file:', manipulated.uri);
+  // Read file as base64; local React Native file URIs need this path for Supabase uploads.
+  if (__DEV__) console.log('[ImageUpload] Reading file:', manipulated.uri);
   const base64 = await FileSystem.readAsStringAsync(manipulated.uri, {
     encoding: FileSystem.EncodingType.Base64,
   });
-  console.log('[ImageUpload] Base64 length:', base64.length);
+  if (__DEV__) console.log('[ImageUpload] Base64 length:', base64.length);
 
   // Convert base64 to Uint8Array
   const byteCharacters = atob(base64);
@@ -67,11 +67,11 @@ export async function pickAndUploadImage({
     byteNumbers[i] = byteCharacters.charCodeAt(i);
   }
   const uint8Array = new Uint8Array(byteNumbers);
-  console.log('[ImageUpload] Uint8Array size:', uint8Array.length);
+  if (__DEV__) console.log('[ImageUpload] Uint8Array size:', uint8Array.length);
 
   // Upload to Supabase Storage
   const fileName = `${folder}/${userId}_${Date.now()}.jpg`;
-  console.log('[ImageUpload] Uploading to:', fileName);
+  if (__DEV__) console.log('[ImageUpload] Uploading to:', fileName);
   const { error: uploadError } = await supabase.storage
     .from('avatars')
     .upload(fileName, uint8Array, {

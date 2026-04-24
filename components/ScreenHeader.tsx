@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../stores/auth';
 import { Child } from '../lib/api';
 
@@ -15,6 +16,7 @@ interface ScreenHeaderProps {
 }
 
 export default function ScreenHeader({ title, icon, subtitle, rightAction, showBack, backIcon = 'close' }: ScreenHeaderProps) {
+  const insets = useSafeAreaInsets();
   const { selectedChild, children } = useApp();
   const [showPicker, setShowPicker] = useState(false);
 
@@ -25,7 +27,7 @@ export default function ScreenHeader({ title, icon, subtitle, rightAction, showB
 
   return (
     <>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: 16 + insets.top }]}>
         {showBack ? (
           <>
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>

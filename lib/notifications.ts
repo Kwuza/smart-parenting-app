@@ -18,7 +18,8 @@ import { Child, ScheduledActivity, getScheduledActivities } from './api';
 // Show notification even when app is in foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -40,7 +41,7 @@ let scheduledNotifications: ScheduledNotification[] = [];
 
 export async function requestNotificationPermission(): Promise<boolean> {
   if (!Device.isDevice) {
-    console.warn('Notifications require a physical device');
+    if (__DEV__) console.warn('Notifications require a physical device');
     return false;
   }
 
@@ -78,7 +79,7 @@ async function scheduleDaily(
     });
     return identifier;
   } catch (e) {
-    console.error(`Failed to schedule ${id}:`, e);
+    if (__DEV__) console.error(`Failed to schedule ${id}:`, e);
     return null;
   }
 }
@@ -146,7 +147,7 @@ async function scheduleOneTime(
     });
     return identifier;
   } catch (e) {
-    console.error(`Failed to schedule ${id}:`, e);
+    if (__DEV__) console.error(`Failed to schedule ${id}:`, e);
     return null;
   }
 }
@@ -284,7 +285,7 @@ async function schedulePendingScheduledActivityNotifications(child: Child): Prom
       await scheduleScheduledActivityNotifications(activity, child.name);
     }
   } catch (e) {
-    console.error(`Failed to sync scheduled activity reminders for ${child.name}:`, e);
+    if (__DEV__) console.error(`Failed to sync scheduled activity reminders for ${child.name}:`, e);
   }
 }
 
@@ -391,7 +392,7 @@ export async function scheduleChildNotifications(
   // One-off reminders for pending scheduled activities (5 min before min/max duration)
   await schedulePendingScheduledActivityNotifications(child);
 
-  console.log(`Scheduled ${scheduledNotifications.filter(n => n.childId === child.id).length} notifications for ${name}`);
+  if (__DEV__) console.log(`Scheduled ${scheduledNotifications.filter(n => n.childId === child.id).length} notifications for ${name}`);
 }
 
 /**
@@ -437,9 +438,9 @@ export async function scheduleWeeklyGrowthReminder(
       minute: 0,
     });
 
-    console.log(`Scheduled weekly growth reminder for ${child.name}`);
+    if (__DEV__) console.log(`Scheduled weekly growth reminder for ${child.name}`);
   } catch (e) {
-    console.error(`Failed to schedule weekly growth reminder:`, e);
+    if (__DEV__) console.error(`Failed to schedule weekly growth reminder:`, e);
   }
 }
 

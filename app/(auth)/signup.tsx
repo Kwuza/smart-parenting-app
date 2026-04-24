@@ -283,25 +283,6 @@ export default function SignupScreen() {
               )}
             </View>
           </TouchableOpacity>
-
-          {/* Divider */}
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or continue with</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Social Buttons */}
-          <View style={styles.socialRow}>
-            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
-              <Ionicons name="logo-google" size={18} color="#4285F4" />
-              <Text style={styles.socialText}>Google</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
-              <Ionicons name="logo-apple" size={18} color="#0F172A" />
-              <Text style={styles.socialText}>Apple</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         {/* Login Link */}
@@ -516,42 +497,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '600',
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-    gap: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E2E8F0',
-  },
-  dividerText: {
-    fontSize: 12,
-    color: '#94A3B8',
-  },
-  socialRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  socialButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#FFFDFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingVertical: 14,
-  },
-  socialText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#0F172A',
   },
   bottomLink: {
     flexDirection: 'row',

@@ -19,7 +19,6 @@
       "bundler": "metro",
       "output": "static"
     },
-    "main": "index.js",
     "plugins": [
       "expo-router",
       "expo-asset",
@@ -30,6 +29,17 @@
     "scheme": "smart-parenting-app",
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e370c421-ef23-42ee-9152-5289495207fc"
+      }
+    },
+    "owner": "smart-parenting",
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/e370c421-ef23-42ee-9152-5289495207fc"
     }
   }
 }

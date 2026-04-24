@@ -12,6 +12,7 @@ import {
   TextInput as RNTextInput,
 } from 'react-native';
 import { TextInput, Text } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { DatePicker } from '../../components/DatePicker';
@@ -20,6 +21,7 @@ import {
   updateChildRoutine,
   RoutineData,
   getAgeMonths,
+  formatDateLocal,
 } from '../../lib/api';
 import { pickAndUploadImage, UploadResult } from '../../lib/image';
 import { assessBmi, BmiResult } from '../../lib/bmi';
@@ -125,6 +127,7 @@ function formatDob(date: Date): string {
 // ════════════════════════════════════════════
 
 export default function AddChildWizardScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuth();
   const { loadChildren } = useApp();
@@ -138,6 +141,8 @@ export default function AddChildWizardScreen() {
   // ── Profile ──
   const [name, setName] = useState('');
   const [dob, setDob] = useState<Date | null>(null);
+  const [nameError, setNameError] = useState('');
+  const [dobError, setDobError] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [selectedIcon, setSelectedIcon] = useState<AvatarIcon>('👶');
   // ── Body ──
@@ -166,7 +171,7 @@ export default function AddChildWizardScreen() {
   const [lrnH, setLrnH] = useState('2'); const [lrnM, setLrnM] = useState('00'); const [lrnP, setLrnP] = useState<TimeP>('PM');
 
   // ── Computed ──
-  const dobStr = dob ? dob.toISOString().slice(0, 10) : '';
+  const dobStr = dob ? formatDateLocal(dob) : '';
   const ageMonths = getAgeMonths(dobStr);
   const ageYears = Math.floor(ageMonths / 12);
   const isRequired = ageYears >= 2 && ageYears <= 5;
@@ -186,6 +191,9 @@ export default function AddChildWizardScreen() {
     }
     const res = assessBmi(h, w, ageMonths, gender);
     setBmiResult(res);
+    if (__DEV__) {
+      console.log('[Wizard BMI Preview]', { h, w, ageMonths, gender, res });
+    }
   }, [height, weight, gender, ageMonths]);
 
   // Date picker handled by DatePicker component
@@ -213,6 +221,19 @@ export default function AddChildWizardScreen() {
     } finally {
       setUploading(false);
     }
+  };
+
+  // Inline validation (Step 1 — runs on each keystroke / date change)
+  const validateName = (v: string) => {
+    if (!v.trim()) { setNameError('Name is required'); return; }
+    if (v.trim().length < 2) { setNameError('Name must be at least 2 characters'); return; }
+    setNameError('');
+  };
+
+  const validateDob = (d: Date | null) => {
+    if (!d) { setDobError('Date of birth is required'); return; }
+    if (d > new Date()) { setDobError('Date of birth cannot be in the future'); return; }
+    setDobError('');
   };
 
   // Validation ----------------------------------------------------
@@ -277,13 +298,22 @@ export default function AddChildWizardScreen() {
     }
   };
 
+  // Clears profile inline errors when user navigates back to Step 1
+  const setStepWithClear = (next: StepKey) => {
+    if (next === 'profile') {
+      setNameError('');
+      setDobError('');
+    }
+    setStep(next);
+  };
+
   // Navigation ----------------------------------------------------
   const handleNext = () => {
     if (validateStep()) {
       const order: StepKey[] = ['profile', 'body', 'sleep', 'meals', 'active'];
       const idx = order.indexOf(step);
       if (idx < order.length - 1) {
-        setStep(order[idx + 1]);
+        setStepWithClear(order[idx + 1]);
       }
     }
   };
@@ -292,7 +322,7 @@ export default function AddChildWizardScreen() {
     const order: StepKey[] = ['profile', 'body', 'sleep', 'meals', 'active'];
     const idx = order.indexOf(step);
     if (idx > 0) {
-      setStep(order[idx - 1]);
+      setStepWithClear(order[idx - 1]);
     }
   };
 
@@ -314,7 +344,7 @@ export default function AddChildWizardScreen() {
       // 1. Create child profile (avatarUrl may be null)
       const child = await createChild(
         name.trim(),
-        dob!.toISOString().slice(0, 10),
+        formatDateLocal(dob!),
         user.id,
         avatarUrl || undefined
       );
@@ -327,7 +357,12 @@ export default function AddChildWizardScreen() {
         if (!isNaN(h) && !isNaN(w)) {
           const res = assessBmi(h, w, ageMonths, gender);
           bmiVal = res?.bmi ?? null;
+          if (__DEV__) {
+            console.log('[Wizard BMI]', { h, w, ageMonths, gender, bmiVal, res });
+          }
         }
+      } else if (__DEV__) {
+        console.log('[Wizard BMI] skipped — guard failed', { ageMonths, hasHeight: !!height, hasWeight: !!weight, hasGender: !!gender });
       }
 
       // 3. Build routine payload
@@ -563,14 +598,15 @@ export default function AddChildWizardScreen() {
         <View style={styles.inputWrapper}>
           <RNTextInput
             value={name}
-            onChangeText={setName}
+            onChangeText={(v) => { setName(v); validateName(v); }}
             placeholder="e.g. Emma"
             autoCapitalize="words"
-            style={styles.rnInput}
+            style={[styles.rnInput, nameError ? styles.rnInputError : null]}
             placeholderTextColor="#94A3B8"
             returnKeyType="next"
           />
         </View>
+        {nameError ? <Text style={styles.fieldError}>{nameError}</Text> : null}
       </View>
 
       {/* Date of Birth */}
@@ -578,10 +614,10 @@ export default function AddChildWizardScreen() {
         <Text style={styles.label}>Date of Birth</Text>
         <DatePicker
           value={dob}
-          onChange={(d) => { setDob(d); }}
+          onChange={(d) => { setDob(d); validateDob(d); }}
           maximumDate={new Date()}
         >
-          <View style={[styles.inputWrapper, !dob && styles.inputError]}>
+          <View style={[styles.inputWrapper, dobError ? styles.inputError : null]}>
             <Text style={{ flex: 1, fontSize: 14, lineHeight: 52, color: dob ? '#0F172A' : '#94A3B8', includeFontPadding: false }}>
               {dob ? formatDob(dob) : 'Select date'}
             </Text>
@@ -592,6 +628,7 @@ export default function AddChildWizardScreen() {
             )}
           </View>
         </DatePicker>
+        {dobError ? <Text style={styles.fieldError}>{dobError}</Text> : null}
       </View>
     </View>
   );
@@ -952,7 +989,7 @@ export default function AddChildWizardScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: 16 + insets.top }]}>
           {stepIndex > 0 ? (
             <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
               <Ionicons name="arrow-back" size={20} color="#0F172A" />
@@ -1216,6 +1253,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     margin: 0,
     includeFontPadding: false,
+  },
+  rnInputError: {
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+  },
+  fieldError: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginTop: 4,
   },
   inputContent: {
     paddingHorizontal: 0,

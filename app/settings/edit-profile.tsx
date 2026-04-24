@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { View, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import { Text, TextInput } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -8,6 +9,7 @@ import { supabase } from '../../lib/supabase';
 import { pickAndUploadImage } from '../../lib/image';
 
 export default function EditProfileScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuth();
   const currentName = user?.user_metadata?.name || '';
@@ -29,12 +31,12 @@ export default function EditProfileScreen() {
     setUploading(true);
     try {
       const result = await pickAndUploadImage({ userId: user?.id || '' });
-      console.log('[EditProfile] Upload result:', result);
+      if (__DEV__) console.log('[EditProfile] Upload result:', result);
       if (result) {
         setAvatarUrl(result.url);
       }
     } catch (e: any) {
-      console.error('[EditProfile] Upload error:', e);
+      if (__DEV__) console.error('[EditProfile] Upload error:', e);
       setUploadError(e?.message || 'Could not upload image');
     } finally {
       setUploading(false);
@@ -50,7 +52,7 @@ export default function EditProfileScreen() {
     }
     setSaving(true);
     try {
-      console.log('[EditProfile] Saving avatar_url:', avatarUrl);
+      if (__DEV__) console.log('[EditProfile] Saving avatar_url:', avatarUrl);
       const { error } = await supabase.auth.updateUser({
         data: { name: name.trim(), avatar_url: avatarUrl },
       });
@@ -73,7 +75,7 @@ export default function EditProfileScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: 16 + insets.top }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color="#0F172A" />
         </TouchableOpacity>

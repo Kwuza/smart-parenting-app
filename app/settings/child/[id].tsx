@@ -1,16 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Image,
   TextInput as RNTextInput, Switch, Modal, Text,
 } from 'react-native';
-import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { pickAndUploadImage } from '../../../lib/image';
 import { scheduleChildNotifications } from '../../../lib/notifications';
 import { assessBmi, BmiResult } from '../../../lib/bmi';
 import {
-  updateChildSettings, updateChildRoutine, Child, RoutineData,
-  getAgeGroup, getAgeMonths,
+  updateChildSettings, updateChildRoutine, deleteChild, Child, RoutineData,
+  getAgeGroup, getAgeMonths, formatDateLocal,
 } from '../../../lib/api';
 import { useApp } from '../../../stores/auth';
 import { DatePicker } from '../../../components/DatePicker';
@@ -76,25 +77,13 @@ export default function ChildSettingsScreen() {
   const { children, loadChildren } = useApp();
   const child = children.find((c: Child) => c.id === params.id);
 
+  // ── ALL hooks declared BEFORE any early return (Rules of Hooks) ───────────
+
+  // Safe area insets — status bar / notch padding
+  const insets = useSafeAreaInsets();
+
   // Loading state — wait for children data before rendering
   const [loadingData, setLoadingData] = useState(true);
-
-  // Reload children from DB whenever this screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      setLoadingData(true);
-      loadChildren().finally(() => setLoadingData(false));
-    }, [loadChildren])
-  );
-
-  // Show spinner while waiting for child data
-  if (loadingData || !child) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FEFBF6' }}>
-        <ActivityIndicator size="large" color="#FF7F60" />
-      </View>
-    );
-  }
 
   // ── Profile state ───────────────────────────────────────────────────────────
   const [name, setName] = useState('');
@@ -131,8 +120,23 @@ export default function ChildSettingsScreen() {
   const [submitError, setSubmitError] = useState('');
   const [submitSuccess, setSubmitSuccess] = useState('');
   const [uploadError, setUploadError] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
-  // ── Load child data into form ──────────────────────────────────────────────
+  // ── Effects ────────────────────────────────────────────────────────────────
+
+  // Reload children from DB on mount or when child id changes
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingData(true);
+    loadChildren().finally(() => {
+      if (!cancelled) setLoadingData(false);
+    });
+    return () => { cancelled = true; };
+  }, [loadChildren, params.id]);
+
+  // Load child data into form
   useEffect(() => {
     if (!child) return;
     setName(child.name);
@@ -161,14 +165,13 @@ export default function ChildSettingsScreen() {
     const lrn = fromTimeStr(child.learn_time);
     setLrnH(lrn.h); setLrnM(lrn.m); setLrnP(lrn.p);
 
-    // Load notification toggles from DB (defaults to all true)
     const dbNotifs = child.notifications as Record<string, boolean> | null;
     const initial = Object.fromEntries(CHILD_NOTIFICATIONS.map(n => [n.key, dbNotifs?.[n.key] ?? true]));
     setNotifToggles(initial);
   }, [child]);
 
   // Live BMI preview
-  const ageMonths = dob ? getAgeMonths(dob.toISOString().slice(0, 10)) : 0;
+  const ageMonths = dob ? getAgeMonths(formatDateLocal(dob)) : 0;
   useEffect(() => {
     if (!height || !weight || !gender || ageMonths < 24 || ageMonths > 60) {
       setBmiResult(null);
@@ -180,11 +183,25 @@ export default function ChildSettingsScreen() {
       setBmiResult(null);
       return;
     }
-    setBmiResult(assessBmi(h, w, ageMonths, gender));
+    const res = assessBmi(h, w, ageMonths, gender);
+    setBmiResult(res);
+    if (__DEV__) {
+      console.log('[ChildSettings BMI Preview]', { h, w, ageMonths, gender, res });
+    }
   }, [height, weight, gender, ageMonths]);
 
   // ── Computed ────────────────────────────────────────────────────────────────
   const ageGroup = child ? getAgeGroup(child.date_of_birth) : 'toddler';
+
+  // ── Conditional renders AFTER all hooks ───────────────────────────────────
+
+  if (loadingData || !child) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FEFBF6' }}>
+        <ActivityIndicator size="large" color="#FF7F60" />
+      </View>
+    );
+  }
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const pickImage = async () => {
@@ -213,7 +230,7 @@ export default function ChildSettingsScreen() {
       // Save basic info + notification toggles
       await updateChildSettings(child.id, {
         name: name.trim(),
-        date_of_birth: dob ? dob.toISOString().slice(0, 10) : undefined,
+        date_of_birth: dob ? formatDateLocal(dob) : undefined,
         avatar_url: avatarUrl || null,
         notifications: notifToggles,
       });
@@ -226,7 +243,12 @@ export default function ChildSettingsScreen() {
         if (!isNaN(h) && !isNaN(w)) {
           const res = assessBmi(h, w, ageMonths, gender);
           bmiVal = res?.bmi ?? null;
+          if (__DEV__) {
+            console.log('[ChildSettings BMI Save]', { h, w, ageMonths, gender, bmiVal, res });
+          }
         }
+      } else if (__DEV__) {
+        console.log('[ChildSettings BMI Save] skipped — guard failed', { ageMonths, hasHeight: !!height, hasWeight: !!weight, hasGender: !!gender });
       }
 
       // Save routines + physical measurements
@@ -251,7 +273,7 @@ export default function ChildSettingsScreen() {
       const updatedChild = {
         ...child,
         name: name.trim(),
-        date_of_birth: dob ? dob.toISOString().slice(0, 10) : child.date_of_birth,
+        date_of_birth: dob ? formatDateLocal(dob) : child.date_of_birth,
         avatar_url: avatarUrl || null,
         bedtime: routine.bedtime,
         wake_up_time: routine.wake_up_time,
@@ -276,6 +298,20 @@ export default function ChildSettingsScreen() {
       setSubmitError(e?.message || 'Failed to save settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!child) return;
+    setDeleteError('');
+    setDeleting(true);
+    try {
+      await deleteChild(child.id);
+      await loadChildren();
+      router.replace('/(tabs)/profile');
+    } catch (e: any) {
+      setDeleteError(e?.message || 'Failed to delete child');
+      setDeleting(false);
     }
   };
 
@@ -346,7 +382,7 @@ export default function ChildSettingsScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: 16 + insets.top }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color="#0F172A" />
         </TouchableOpacity>
@@ -579,6 +615,16 @@ export default function ChildSettingsScreen() {
           ))}
         </View>
 
+        {/* Delete Child */}
+        <TouchableOpacity
+          style={styles.deleteBtn}
+          onPress={() => setShowDeleteModal(true)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="trash-outline" size={16} color="#EF4444" />
+          <Text style={styles.deleteBtnText}>Delete {name || 'Child'}</Text>
+        </TouchableOpacity>
+
         <View style={{ height: 40 }} />
       </ScrollView>
 
@@ -604,6 +650,48 @@ export default function ChildSettingsScreen() {
             <TouchableOpacity onPress={() => setShowIconPicker(false)} style={styles.modalCloseBtn}>
               <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal visible={showDeleteModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.deleteIconWrap}>
+              <Ionicons name="trash" size={28} color="#EF4444" />
+            </View>
+            <Text style={styles.modalTitle}>Delete {name || 'this child'}?</Text>
+            <Text style={styles.deleteDesc}>
+              All activity records for this child will remain, but their profile and scheduled
+              reminders will be removed. This cannot be undone.
+            </Text>
+            {deleteError ? (
+              <View style={styles.errorBanner}>
+                <Ionicons name="alert-circle" size={16} color="#EF4444" />
+                <Text style={styles.errorBannerText}>{deleteError}</Text>
+              </View>
+            ) : null}
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => { setShowDeleteModal(false); setDeleteError(''); }}
+                disabled={deleting}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalDeleteBtn, deleting && styles.modalDeleteBtnDisabled]}
+                onPress={handleDelete}
+                disabled={deleting}
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.modalDeleteText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -734,4 +822,32 @@ const styles = StyleSheet.create({
   iconEmoji: { fontSize: 32 },
   modalCloseBtn: { paddingVertical: 10, paddingHorizontal: 24, backgroundColor: '#F1F5F9', borderRadius: 12 },
   modalCloseText: { fontWeight: '600', color: '#0F172A' },
+
+  // ── Delete ──
+  deleteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 14, marginTop: 8,
+    backgroundColor: '#FEF2F2', borderRadius: 14, borderWidth: 1, borderColor: '#FECACA',
+  },
+  deleteBtnText: { fontSize: 14, fontWeight: '600', color: '#EF4444' },
+  deleteIconWrap: {
+    width: 56, height: 56, borderRadius: 28, backgroundColor: '#FEF2F2',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+  },
+  deleteDesc: {
+    fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 20,
+    marginBottom: 16,
+  },
+  modalBtnRow: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalCancelBtn: {
+    flex: 1, paddingVertical: 13, borderRadius: 12,
+    backgroundColor: '#F1F5F9', alignItems: 'center',
+  },
+  modalCancelText: { fontSize: 15, fontWeight: '600', color: '#0F172A' },
+  modalDeleteBtn: {
+    flex: 1, paddingVertical: 13, borderRadius: 12,
+    backgroundColor: '#EF4444', alignItems: 'center',
+  },
+  modalDeleteBtnDisabled: { opacity: 0.6 },
+  modalDeleteText: { fontSize: 15, fontWeight: '600', color: '#FFF' },
 });

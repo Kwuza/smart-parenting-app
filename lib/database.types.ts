@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       activities: {
@@ -90,6 +115,7 @@ export type Database = {
       children: {
         Row: {
           activity_time: string | null
+          avatar_url: string | null
           bedtime: string | null
           bmi: number | null
           breakfast_time: string | null
@@ -105,17 +131,17 @@ export type Database = {
           max_screen_time_minutes: number | null
           min_sleep_minutes: number | null
           name: string
-          notifications: Json | null
           nap_time: string | null
+          notifications: Json | null
           parent_id: string
           snack_time: string | null
           updated_at: string | null
-          avatar_url: string | null
           wake_up_time: string | null
           weight_kg: number | null
         }
         Insert: {
           activity_time?: string | null
+          avatar_url?: string | null
           bedtime?: string | null
           bmi?: number | null
           breakfast_time?: string | null
@@ -131,17 +157,17 @@ export type Database = {
           max_screen_time_minutes?: number | null
           min_sleep_minutes?: number | null
           name: string
-          notifications?: Json | null
           nap_time?: string | null
+          notifications?: Json | null
           parent_id: string
           snack_time?: string | null
           updated_at?: string | null
-          avatar_url?: string | null
           wake_up_time?: string | null
           weight_kg?: number | null
         }
         Update: {
           activity_time?: string | null
+          avatar_url?: string | null
           bedtime?: string | null
           bmi?: number | null
           breakfast_time?: string | null
@@ -157,12 +183,11 @@ export type Database = {
           max_screen_time_minutes?: number | null
           min_sleep_minutes?: number | null
           name?: string
-          notifications?: Json | null
           nap_time?: string | null
+          notifications?: Json | null
           parent_id?: string
           snack_time?: string | null
           updated_at?: string | null
-          avatar_url?: string | null
           wake_up_time?: string | null
           weight_kg?: number | null
         }
@@ -176,7 +201,9 @@ export type Database = {
           content: string
           created_at: string | null
           id: string
+          insight_type: string | null
           priority: string | null
+          trend: string | null
         }
         Insert: {
           based_on?: Json | null
@@ -185,7 +212,9 @@ export type Database = {
           content: string
           created_at?: string | null
           id?: string
+          insight_type?: string | null
           priority?: string | null
+          trend?: string | null
         }
         Update: {
           based_on?: Json | null
@@ -194,11 +223,72 @@ export type Database = {
           content?: string
           created_at?: string | null
           id?: string
+          insight_type?: string | null
           priority?: string | null
+          trend?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "recommendations_child_id_fkey"
+            columns: ["child_id"]
+            isOneToOne: false
+            referencedRelation: "children"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scheduled_activities: {
+        Row: {
+          category: string | null
+          child_id: string
+          created_at: string | null
+          food_groups: string[] | null
+          id: string
+          max_duration_minutes: number | null
+          max_notification_id: string | null
+          meal_type: string | null
+          min_duration_minutes: number | null
+          min_notification_id: string | null
+          planned_end_time: string
+          start_time: string
+          status: string
+          type: string
+        }
+        Insert: {
+          category?: string | null
+          child_id: string
+          created_at?: string | null
+          food_groups?: string[] | null
+          id?: string
+          max_duration_minutes?: number | null
+          max_notification_id?: string | null
+          meal_type?: string | null
+          min_duration_minutes?: number | null
+          min_notification_id?: string | null
+          planned_end_time: string
+          start_time: string
+          status?: string
+          type: string
+        }
+        Update: {
+          category?: string | null
+          child_id?: string
+          created_at?: string | null
+          food_groups?: string[] | null
+          id?: string
+          max_duration_minutes?: number | null
+          max_notification_id?: string | null
+          meal_type?: string | null
+          min_duration_minutes?: number | null
+          min_notification_id?: string | null
+          planned_end_time?: string
+          start_time?: string
+          status?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_activities_child_id_fkey"
             columns: ["child_id"]
             isOneToOne: false
             referencedRelation: "children"
@@ -340,6 +430,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

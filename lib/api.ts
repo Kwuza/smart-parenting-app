@@ -67,6 +67,22 @@ export function getAgeMonths(dob: string): number {
   return (now.getFullYear() - birth.getFullYear()) * 12 + (now.getMonth() - birth.getMonth());
 }
 
+/** Convert a local Date to YYYY-MM-DD without UTC timezone shifts */
+export function formatDateLocal(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function getAgeYears(dob: string): number | null {
+  if (!dob) return null;
+  return Math.floor(
+    (Date.now() - new Date(dob).getTime()) /
+      (365.25 * 24 * 60 * 60 * 1000)
+  );
+}
+
 export interface RoutineData {
   bedtime: string | null;
   wake_up_time: string | null;
@@ -99,6 +115,7 @@ export async function getChildren() {
   const { data, error } = await supabase
     .from('children')
     .select('*')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data as Child[];
@@ -340,4 +357,12 @@ export async function updateScheduledActivity(
     .single();
   if (error) throw error;
   return data as ScheduledActivity;
+}
+
+export async function deleteChild(childId: string) {
+  const { error } = await (supabase as any)
+    .from('children')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', childId);
+  if (error) throw error;
 }

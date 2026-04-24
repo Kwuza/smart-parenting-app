@@ -1,8 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const OLLAMA_API_KEY = Deno.env.get("OLLAMA_API_KEY");
-const OLLAMA_URL = "https://ollama.com/api/chat";
-const MODEL = Deno.env.get("OLLAMA_MODEL") || "qwen3.5:latest";
+const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const MODEL = Deno.env.get("OPENROUTER_MODEL") || "inclusionai/ling-2.6-1t:free";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const RETRY_MAX = 1;
@@ -734,26 +734,31 @@ Deno.serve(async (req: Request) => {
     for (let attempt = 0; attempt <= RETRY_MAX; attempt++) {
       lastError = '';
 
-      const aiRes = await fetch(OLLAMA_URL, {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      const aiRes = await fetch(OPENROUTER_URL, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${OLLAMA_API_KEY}`,
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
+          "HTTP-Referer": "https://nestnote.app",
+          "X-Title": "NestNote",
         },
+        signal: controller.signal,
         body: JSON.stringify({
           model: MODEL,
           messages: [{ role: "user", content: prompt }],
-          stream: false,
-          options: {
-            temperature,
-            num_predict: 2048,
-          },
+          temperature,
+          max_tokens: 2048,
         }),
       });
 
+      clearTimeout(timeoutId);
+
       if (!aiRes.ok) {
         const errText = await aiRes.text();
-        console.error(`[attempt ${attempt + 1}] Ollama error:`, errText);
+        console.error(`[attempt ${attempt + 1}] OpenRouter error:`, errText);
         lastError = errText;
         lastAiContent = `HTTP ${aiRes.status}: ${errText.slice(0, 500)}`;
         continue;
@@ -780,7 +785,7 @@ Deno.serve(async (req: Request) => {
       const rawStr = JSON.stringify(aiResponse).slice(0, 300);
       console.error(`[attempt ${attempt + 1}] raw response (${rawStr.length}):`, rawStr);
 
-      const aiContent: string = aiResponse?.message?.content || "";
+      const aiContent: string = aiResponse?.choices?.[0]?.message?.content || "";
       if (!aiContent) {
         lastError = `No content in message. Response: ${rawStr}`;
         lastAiContent = rawStr;

@@ -1,7 +1,7 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { View, ScrollView, StyleSheet, TouchableOpacity, TextInput as RNTextInput, FlatList, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native';
 import { Text } from 'react-native-paper';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../stores/auth';
 import { scheduleScheduledActivityNotifications } from '../../lib/notifications';
@@ -79,6 +79,121 @@ const SUBJECTS = [
   { key: 'music', label: 'Music' },
   { key: 'art', label: 'Art' },
 ];
+
+const sanitizeHour = (text: string) => {
+  const n = parseInt(text.replace(/[^0-9]/g, ''), 10);
+  if (!Number.isFinite(n)) return '1';
+  return String(Math.min(12, Math.max(1, n)));
+};
+
+const sanitizeMinute = (text: string) => {
+  const n = parseInt(text.replace(/[^0-9]/g, ''), 10);
+  if (!Number.isFinite(n)) return '00';
+  return String(Math.min(59, Math.max(0, n))).padStart(2, '0');
+};
+
+const stepHour = (value: string, delta: number) =>
+  String(Math.min(12, Math.max(1, (parseInt(value, 10) || 0) + delta)));
+
+const stepMinute = (value: string, delta: number) =>
+  String(Math.min(59, Math.max(0, (parseInt(value, 10) || 0) + delta))).padStart(2, '0');
+
+// --- Single Time Input (meal timestamp) ---
+function SingleTimeInput({
+  hour,
+  minute,
+  period,
+  onHourChange,
+  onMinuteChange,
+  onPeriodChange,
+}: {
+  hour: string;
+  minute: string;
+  period: 'AM' | 'PM';
+  onHourChange: (v: string) => void;
+  onMinuteChange: (v: string) => void;
+  onPeriodChange: (v: 'AM' | 'PM') => void;
+}) {
+  const hourRef = useRef<RNTextInput>(null);
+  const minuteRef = useRef<RNTextInput>(null);
+
+  return (
+    <View style={styles.singleTimeContainer}>
+      <View style={styles.singleTimeRow}>
+        <View style={styles.timeDigitCol}>
+          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => onHourChange(stepHour(hour, 1))}>
+            <Ionicons name="add" size={18} color="#FF7F60" />
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={1} onPress={() => hourRef.current?.focus()}>
+            <View style={styles.mealTimeInputBox}>
+              <RNTextInput
+                ref={hourRef}
+                value={hour}
+                onChangeText={(t) => onHourChange(sanitizeHour(t))}
+                keyboardType="number-pad"
+                style={styles.mealTimeInput}
+                maxLength={2}
+                selectTextOnFocus
+                placeholder="12"
+                placeholderTextColor="#CBD5E1"
+                textAlign="center"
+                textAlignVertical="center"
+              />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => onHourChange(stepHour(hour, -1))}>
+            <Ionicons name="remove" size={18} color="#64748B" />
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.singleTimeColon}>:</Text>
+
+        <View style={styles.timeDigitCol}>
+          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => onMinuteChange(stepMinute(minute, 5))}>
+            <Ionicons name="add" size={18} color="#FF7F60" />
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={1} onPress={() => minuteRef.current?.focus()}>
+            <View style={styles.mealTimeInputBox}>
+              <RNTextInput
+                ref={minuteRef}
+                value={minute}
+                onChangeText={(t) => onMinuteChange(sanitizeMinute(t))}
+                keyboardType="number-pad"
+                style={styles.mealTimeInput}
+                maxLength={2}
+                selectTextOnFocus
+                placeholder="00"
+                placeholderTextColor="#CBD5E1"
+                textAlign="center"
+                textAlignVertical="center"
+              />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.stepperBtn} activeOpacity={0.6} onPress={() => onMinuteChange(stepMinute(minute, -5))}>
+            <Ionicons name="remove" size={18} color="#64748B" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.timePeriodCol}>
+          <TouchableOpacity
+            style={[styles.periodBtn, period === 'AM' && styles.periodBtnActive]}
+            activeOpacity={0.7}
+            onPress={() => onPeriodChange('AM')}
+          >
+            <Text style={[styles.periodText, period === 'AM' && styles.periodTextActive]}>AM</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.periodBtn, period === 'PM' && styles.periodBtnActive]}
+            activeOpacity={0.7}
+            onPress={() => onPeriodChange('PM')}
+          >
+            <Text style={[styles.periodText, period === 'PM' && styles.periodTextActive]}>PM</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
 
 // --- Time Range Input (start/end → calculated duration) ---
 function TimeRangeInput({
@@ -349,25 +464,35 @@ export default function LogActivityScreen() {
   const router = useRouter();
 
   const [refreshing, setRefreshing] = useState(false);
+
+  const refreshChildren = useCallback(async () => {
+    await loadChildren();
+    const freshChildren = useApp.getState().children;
+    const freshSelected = useApp.getState().selectedChild;
+    if (freshSelected) {
+      const updated = freshChildren.find(c => c.id === freshSelected.id);
+      if (!updated && freshChildren[0]) {
+        useApp.getState().selectChild(freshChildren[0]);
+      }
+    }
+  }, [loadChildren]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await loadChildren();
-      // Read fresh from store to avoid stale closure
-      const freshChildren = useApp.getState().children;
-      const freshSelected = useApp.getState().selectedChild;
-      if (freshSelected) {
-        const updated = freshChildren.find(c => c.id === freshSelected.id);
-        if (!updated && freshChildren[0]) {
-          useApp.getState().selectChild(freshChildren[0]);
-        }
-      }
+      await refreshChildren();
     } catch {
       // error handled by children list being empty
     } finally {
       setRefreshing(false);
     }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshChildren().catch(() => {});
+    }, [refreshChildren])
+  );
 
   // Time range (sleep, nap, education, physical, screen_time — start/end, duration auto-calculated)
   const [sleepStartH, setSleepStartH] = useState('9');
@@ -418,6 +543,9 @@ export default function LogActivityScreen() {
   const [mealType, setMealType] = useState('lunch');
   const [mealQuality, setMealQuality] = useState('good');
   const [foodGroups, setFoodGroups] = useState<string[]>([]);
+  const [mealTimeH, setMealTimeH] = useState('12');
+  const [mealTimeM, setMealTimeM] = useState('00');
+  const [mealTimeP, setMealTimeP] = useState<'AM' | 'PM'>('PM');
 
   // Physical
   const [physicalType, setPhysicalType] = useState('running');
@@ -441,6 +569,37 @@ export default function LogActivityScreen() {
   const [schedCategory, setSchedCategory] = useState('leisure');
 
   const activeType = ACTIVITY_TYPES.find((t) => t.key === activityType)!;
+
+  const resetForm = () => {
+    setMode('log');
+    setSleepStartH('9'); setSleepStartM('00'); setSleepStartP('PM');
+    setSleepEndH('6'); setSleepEndM('00'); setSleepEndP('AM');
+    setNapStartH('1'); setNapStartM('00'); setNapStartP('PM');
+    setNapEndH('2'); setNapEndM('00'); setNapEndP('PM');
+    setLearnStartH('3'); setLearnStartM('00'); setLearnStartP('PM');
+    setLearnEndH('4'); setLearnEndM('00'); setLearnEndP('PM');
+    setActiveStartH('4'); setActiveStartM('00'); setActiveStartP('PM');
+    setActiveEndH('5'); setActiveEndM('00'); setActiveEndP('PM');
+    setScreenStartH('3'); setScreenStartM('00'); setScreenStartP('PM');
+    setScreenEndH('4'); setScreenEndM('00'); setScreenEndP('PM');
+    setDevice('phone');
+    setScreenCategory('leisure');
+    setSleepQuality('good');
+    setNapQuality('good');
+    setMealType('lunch');
+    setMealQuality('good');
+    setFoodGroups([]);
+    setMealTimeH('12'); setMealTimeM('00'); setMealTimeP('PM');
+    setPhysicalType('running');
+    setSubject('reading');
+    setNotes('');
+    setScheduleDate(new Date());
+    setSchedHour('3'); setSchedMinute('00'); setSchedPeriod('PM');
+    setMinDurationH('1'); setMinDurationM('0');
+    setMaxDurationH('2'); setMaxDurationM('0');
+    setSchedMealType('lunch');
+    setSchedCategory('leisure');
+  };
 
   // Calculate hours/minutes from time range
   const calcDuration = (sH: string, sM: string, sP: 'AM' | 'PM', eH: string, eM: string, eP: 'AM' | 'PM') => {
@@ -560,6 +719,7 @@ export default function LogActivityScreen() {
         activityType === 'meal' ? foodGroups : undefined
       );
       await scheduleScheduledActivityNotifications(scheduled, selectedChild.name);
+      resetForm();
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
@@ -600,6 +760,7 @@ export default function LogActivityScreen() {
             meal_type: mealType,
             quality: mealQuality,
             food_groups: foodGroups,
+            start_time: `${mealTimeH}:${mealTimeM} ${mealTimeP}`,
           };
           break;
         case 'physical_activity': {
@@ -627,12 +788,13 @@ export default function LogActivityScreen() {
         sleep: 'sleep',
         nap: 'sleep',
         meal: 'meal',
-        physical_activity: 'education',
+        physical_activity: 'physical_activity',
         education: 'education',
       };
       const dbType = typeMapping[activityType] || 'screen_time';
 
       await logActivity(selectedChild.id, dbType, value);
+      resetForm();
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
@@ -1033,6 +1195,17 @@ export default function LogActivityScreen() {
             {activityType === 'meal' && (
               <>
                 <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Meal Time</Text>
+                  <SingleTimeInput
+                    hour={mealTimeH}
+                    minute={mealTimeM}
+                    period={mealTimeP}
+                    onHourChange={setMealTimeH}
+                    onMinuteChange={setMealTimeM}
+                    onPeriodChange={setMealTimeP}
+                  />
+                </View>
+                <View style={styles.card}>
                   <Text style={styles.cardTitle}>Meal</Text>
                   <ChipSelector items={MEALS} value={mealType} onChange={setMealType} />
                 </View>
@@ -1121,7 +1294,7 @@ const styles = StyleSheet.create({
 
   scrollContent: { padding: 20 },
   sectionLabel: { fontSize: 14, fontWeight: '600', color: '#0F172A', marginBottom: 12 },
-  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 20, marginBottom: 20 },
   typeCard: {
     width: '30%', alignItems: 'center', gap: 8,
     backgroundColor: '#FFFDFF', borderRadius: 16, borderWidth: 2, borderColor: '#E2E8F0',
@@ -1157,6 +1330,29 @@ const styles = StyleSheet.create({
   timeDigitCol: { alignItems: 'center', gap: 3 },
   timeColon: { fontSize: 24, fontWeight: '300', color: '#CBD5E1', marginBottom: 24 },
   timePeriodCol: { marginLeft: 3, gap: 3, marginBottom: 28 },
+  singleTimeContainer: { alignItems: 'center', width: '100%' },
+  singleTimeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  singleTimeColon: { fontSize: 28, fontWeight: '300', color: '#CBD5E1', marginBottom: 28 },
+  mealTimeInputBox: {
+    width: 52,
+    height: 52,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: '#E2E8F0',
+  },
+  mealTimeInput: {
+    width: '100%',
+    height: '100%',
+    padding: 0,
+    margin: 0,
+    fontSize: 30,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
+  },
   periodBtn: {
     paddingHorizontal: 6, paddingVertical: 5, borderRadius: 6,
     backgroundColor: '#F1F5F9', borderWidth: 1.5, borderColor: 'transparent',

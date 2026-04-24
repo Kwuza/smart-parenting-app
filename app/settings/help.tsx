@@ -3,6 +3,7 @@ import { View, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface FAQItem {
   id: string;
@@ -367,6 +368,7 @@ Research also shows that parental self-efficacy — confidence in one\'s parenti
 const CATEGORIES = Array.from(new Set(FAQ_ITEMS.map((i) => i.category)));
 
 export default function HelpScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -382,7 +384,7 @@ export default function HelpScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: 16 + insets.top }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color="#0F172A" />
         </TouchableOpacity>
