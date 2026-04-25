@@ -1,4 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// Deno Edge Functions require explicit .ts extensions for local imports.
+// @ts-ignore TS5097: the app tsconfig is not the Deno Edge runtime config.
+import { normalizeRecommendations } from "./recommendation-normalizer.ts";
+
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined;
+  };
+  serve(handler: (request: Request) => Response | Promise<Response>): void;
+};
 
 const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -636,7 +646,12 @@ INSTRUCTIONS
    c) If unchanged or worse: provide a meaningfully different approach
 6. Never repeat advice from a previous recommendation unless the problem has clearly not improved.
 7. Each recommendation: 2-4 sentences. Be direct and actionable.
-8. Category: screen_time | sleep | nutrition | activity | general.
+8. Category MUST be exactly one of: screen_time | sleep | meal | education | physical_activity | general.
+   - Pick the category from the metric cited in the first data sentence, NOT from a replacement suggestion.
+   - Use meal for nutrition/food recommendations.
+   - Use physical_activity ONLY for exercise, motor skills, outdoor play, sports, playground, dancing, swimming, walking practice, or similar movement evidence.
+   - Never return the legacy category "activity"; generic scheduled/routine activity advice is general unless it is explicitly physical movement.
+   - Avoid repeating the same category unless the data genuinely supports multiple recommendations about that same primary metric.
 9. Priority: high (concerning pattern), medium (room for improvement), low (positive reinforcement).
 10. Insight type:
     - "risk": concerning pattern needing attention (e.g., consistently exceeding limits, poor sleep)
@@ -656,7 +671,7 @@ Respond in JSON:
   "recommendations": [
     {
       "content": "string (MUST include specific data values)",
-      "category": "screen_time|sleep|nutrition|activity|general",
+      "category": "screen_time|sleep|meal|education|physical_activity|general",
       "priority": "high|medium|low",
       "insight_type": "risk|opportunity|follow_up|positive",
       "trend": "worsening|stable|improving|null"
@@ -803,6 +818,13 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
+      const normalizedRecommendations = normalizeRecommendations(parsed.recommendations);
+      if (normalizedRecommendations.length === 0) {
+        lastError = `no valid recommendations after normalization: ${aiContent.slice(0, 200)}`;
+        temperature += RETRY_TEMP_ADJUST;
+        continue;
+      }
+
       const periodEnd = new Date().toISOString().slice(0, 10);
       const periodStart = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const basedOn = {
@@ -818,9 +840,10 @@ Deno.serve(async (req: Request) => {
         scheduled_summary: scheduledSummary,
         model: MODEL,
         confidence: analysisSummary.confidence,
+        category_normalization: "deterministic-v1",
       };
 
-      const insertPromises = parsed.recommendations.map((rec: any) =>
+      const insertPromises = normalizedRecommendations.map((rec) =>
         fetch(`${SUPABASE_URL}/rest/v1/recommendations`, {
           method: "POST",
           headers: {
@@ -842,10 +865,31 @@ Deno.serve(async (req: Request) => {
       );
 
       const insertResults = await Promise.all(insertPromises);
-      const savedRecommendations = await Promise.all(insertResults.map(r => r.json()));
+      const savedPayloads = await Promise.all(insertResults.map(async (res) => {
+        const responseText = await res.text();
+        let payload: unknown = null;
+        if (responseText.length > 0) {
+          try {
+            payload = JSON.parse(responseText) as unknown;
+          } catch {
+            payload = responseText;
+          }
+        }
+        if (!res.ok) {
+          const detail = typeof payload === "string" ? payload : JSON.stringify(payload);
+          throw new Error(`recommendation insert failed: ${res.status} ${detail.slice(0, 300)}`);
+        }
+        return payload;
+      }));
+      const savedRecommendations = savedPayloads.flatMap((payload) => {
+        if (Array.isArray(payload)) {
+          return payload;
+        }
+        return payload === null ? [] : [payload];
+      });
 
       return new Response(JSON.stringify({
-        recommendations: savedRecommendations.flat(),
+        recommendations: savedRecommendations,
         summary: parsed.summary ?? analysisSummary,
       }), {
         status: 200,
