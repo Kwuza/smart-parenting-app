@@ -140,6 +140,10 @@ function getDateKey(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+function getActivityDateKey(activity: Activity): string {
+  return getDateKey(new Date(activity.recorded_at));
+}
+
 function getWeekStart(date: Date): Date {
   const d = new Date(date);
   const day = d.getDay(); // 0 = Sunday, 1 = Monday
@@ -275,7 +279,7 @@ export default function HistoryScreen() {
   const activityDateKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const a of monthActivities) {
-      keys.add(a.recorded_at.split('T')[0]);
+      keys.add(getActivityDateKey(a));
     }
     return keys;
   }, [monthActivities]);
@@ -283,7 +287,7 @@ export default function HistoryScreen() {
   // Filter activities for selected date
   const selectedDayActivities = useMemo(() => {
     const selKey = getDateKey(selectedDate);
-    let filtered = monthActivities.filter(a => a.recorded_at.startsWith(selKey));
+    let filtered = monthActivities.filter(a => getActivityDateKey(a) === selKey);
     if (activeFilter !== 'all') {
       filtered = filtered.filter(a => a.type === activeFilter);
     }
@@ -351,7 +355,7 @@ export default function HistoryScreen() {
     const datasets = TIME_BASED_TYPES.map(type => ({
       data: days.map(day => {
         const dayActs = filteredMonthActivities.filter(
-          a => a.type === type && a.recorded_at.startsWith(day.key)
+          a => a.type === type && getActivityDateKey(a) === day.key
         );
         let totalMins = 0;
         for (const a of dayActs) {
@@ -365,7 +369,7 @@ export default function HistoryScreen() {
 
     // Meals pie data for selected week
     const weekMeals = filteredMonthActivities.filter(a => {
-      const recDate = a.recorded_at.split('T')[0];
+      const recDate = getActivityDateKey(a);
       return a.type === 'meal' && days.some(d => d.key === recDate);
     });
     const foodCounts: Record<string, number> = {};

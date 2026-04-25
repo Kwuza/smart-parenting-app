@@ -166,10 +166,23 @@ export async function updateChildRoutine(childId: string, routine: RoutineData) 
 }
 
 // Activities CRUD
+export function toLocalNoonISOString(date: Date): string {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    12,
+    0,
+    0,
+    0
+  ).toISOString();
+}
+
 export async function logActivity(childId: string, type: ActivityType, value: Record<string, any>, date?: Date) {
+  const recordedAt = date ? toLocalNoonISOString(date) : new Date().toISOString();
   const { data, error } = await (supabase as any)
     .from('activities')
-    .insert({ child_id: childId, type, value, recorded_at: (date || new Date()).toISOString() })
+    .insert({ child_id: childId, type, value, recorded_at: recordedAt })
     .select()
     .single();
   if (error) throw error;
