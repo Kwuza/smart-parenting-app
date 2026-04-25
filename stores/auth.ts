@@ -28,7 +28,15 @@ export const useAuth = create<AuthState>((set) => ({
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name } },
+      options: {
+        data: {
+          name,
+          consent: {
+            version: '1.0',
+            granted_at: new Date().toISOString(),
+          },
+        },
+      },
     });
     if (error) throw error;
     // Don't auto-login after signup — user should confirm email if required,

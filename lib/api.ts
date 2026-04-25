@@ -166,10 +166,10 @@ export async function updateChildRoutine(childId: string, routine: RoutineData) 
 }
 
 // Activities CRUD
-export async function logActivity(childId: string, type: ActivityType, value: Record<string, any>) {
+export async function logActivity(childId: string, type: ActivityType, value: Record<string, any>, date?: Date) {
   const { data, error } = await (supabase as any)
     .from('activities')
-    .insert({ child_id: childId, type, value, recorded_at: new Date().toISOString() })
+    .insert({ child_id: childId, type, value, recorded_at: (date || new Date()).toISOString() })
     .select()
     .single();
   if (error) throw error;

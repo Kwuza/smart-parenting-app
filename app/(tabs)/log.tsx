@@ -1,7 +1,7 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { View, ScrollView, StyleSheet, TouchableOpacity, TextInput as RNTextInput, FlatList, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native';
 import { Text } from 'react-native-paper';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../../stores/auth';
 import { scheduleScheduledActivityNotifications } from '../../lib/notifications';
@@ -462,6 +462,21 @@ export default function LogActivityScreen() {
   const [submitError, setSubmitError] = useState('');
   const { selectedChild, children, selectChild, loadChildren } = useApp();
   const router = useRouter();
+  const params = useLocalSearchParams<{ mode?: string }>();
+
+  // Route query-param mode override (e.g. /log?mode=schedule from Dashboard)
+  // Applied once on mount so manual toggles are not overwritten by stale params.
+  const didApplyModeParam = useRef(false);
+  useEffect(() => {
+    if (didApplyModeParam.current) return;
+    if (params.mode === 'schedule') {
+      didApplyModeParam.current = true;
+      setMode('schedule');
+    } else if (params.mode === 'log') {
+      didApplyModeParam.current = true;
+      setMode('log');
+    }
+  }, [params.mode]);
 
   const [refreshing, setRefreshing] = useState(false);
 
@@ -565,6 +580,12 @@ export default function LogActivityScreen() {
   const [minDurationM, setMinDurationM] = useState('0');
   const [maxDurationH, setMaxDurationH] = useState('2');
   const [maxDurationM, setMaxDurationM] = useState('0');
+
+  // ── Log mode date state ──
+  const [logDate, setLogDate] = useState(new Date());
+  const goToPrevLogDay = () => { const d = new Date(logDate); d.setDate(d.getDate() - 1); setLogDate(d); };
+  const goToNextLogDay = () => { const d = new Date(logDate); d.setDate(d.getDate() + 1); setLogDate(d); };
+  const goToTodayLog = () => setLogDate(new Date());
   const [schedMealType, setSchedMealType] = useState('lunch');
   const [schedCategory, setSchedCategory] = useState('leisure');
 
@@ -599,6 +620,7 @@ export default function LogActivityScreen() {
     setMaxDurationH('2'); setMaxDurationM('0');
     setSchedMealType('lunch');
     setSchedCategory('leisure');
+    setLogDate(new Date());
   };
 
   // Calculate hours/minutes from time range
@@ -720,11 +742,7 @@ export default function LogActivityScreen() {
       );
       await scheduleScheduledActivityNotifications(scheduled, selectedChild.name);
       resetForm();
-      setSuccess(true);
-      setTimeout(() => {
-        setSuccess(false);
-        router.back();
-      }, 1800);
+      router.replace('/(tabs)/history');
     } catch (err: any) {
       setSubmitError(err.message || 'Failed to schedule activity');
     } finally {
@@ -793,7 +811,7 @@ export default function LogActivityScreen() {
       };
       const dbType = typeMapping[activityType] || 'screen_time';
 
-      await logActivity(selectedChild.id, dbType, value);
+      await logActivity(selectedChild.id, dbType, value, logDate);
       resetForm();
       setSuccess(true);
       setTimeout(() => {
@@ -1104,6 +1122,27 @@ export default function LogActivityScreen() {
         {/* ────────────────────────────────────────────────── */}
         {mode === 'log' && (
           <>
+            {/* Date selector */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Date</Text>
+              <View style={styles.dateNavRow}>
+                <TouchableOpacity onPress={goToPrevLogDay} style={styles.dateArrow} activeOpacity={0.6}>
+                  <Ionicons name="chevron-back" size={20} color="#0F172A" />
+                </TouchableOpacity>
+                <View style={styles.dateDisplay}>
+                  <Text style={styles.dateText}>{formatScheduleDate(logDate)}</Text>
+                  {!isToday(logDate) && (
+                    <TouchableOpacity onPress={goToTodayLog} style={styles.todayPill} activeOpacity={0.7}>
+                      <Text style={styles.todayPillText}>↩ Today</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <TouchableOpacity onPress={goToNextLogDay} style={styles.dateArrow} activeOpacity={0.6}>
+                  <Ionicons name="chevron-forward" size={20} color="#0F172A" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
             {/* Time Range — sleep, nap, education, physical, screen_time */}
             {activityType === 'screen_time' && (
               <View style={styles.card}>

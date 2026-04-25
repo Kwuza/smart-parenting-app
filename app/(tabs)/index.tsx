@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useAuth } from '../../stores/auth';
 import { cancelScheduledActivityNotifications, scheduleScheduledActivityNotifications } from '../../lib/notifications';
-import { getTodayActivities, getScheduledActivities, logActivity, deleteScheduledActivity, updateScheduledActivity, Activity, ActivityType, ScheduledActivity, getAgeYears } from '../../lib/api';
+import { getTodayActivities, getScheduledActivities, logActivity, deleteScheduledActivity, updateScheduledActivity, updateScheduledActivityStatus, Activity, ActivityType, ScheduledActivity, getAgeYears } from '../../lib/api';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -830,23 +830,23 @@ function LogConfirmModal({
     if (!scheduled) return;
     setSaving(true);
     try {
-      let value: Record<string, any> = { hours, minutes };
+      let value: Record<string, any> = { hours, minutes, end_time: scheduled.planned_end_time };
       switch (scheduled.type) {
         case 'meal':
-          value = { meal_type: mealType, food_groups: foodGroups, quality, hours, minutes, notes: notes || undefined };
+          value = { meal_type: mealType, food_groups: foodGroups, quality, hours, minutes, end_time: scheduled.planned_end_time, notes: notes || undefined };
           break;
         case 'screen_time':
-          value = { hours, minutes, category: scheduled.category || 'leisure', device: 'phone', notes: notes || undefined };
+          value = { hours, minutes, category: scheduled.category || 'leisure', device: 'phone', end_time: scheduled.planned_end_time, notes: notes || undefined };
           break;
         case 'sleep':
         case 'nap':
-          value = { hours, minutes, quality: 'good', notes: notes || undefined };
+          value = { hours, minutes, quality: 'good', end_time: scheduled.planned_end_time, notes: notes || undefined };
           break;
         case 'physical_activity':
-          value = { hours, minutes, activity: scheduled.category || 'other', notes: notes || undefined };
+          value = { hours, minutes, activity: scheduled.category || 'other', end_time: scheduled.planned_end_time, notes: notes || undefined };
           break;
         case 'education':
-          value = { hours, minutes, subject: scheduled.category || 'reading', notes: notes || undefined };
+          value = { hours, minutes, subject: scheduled.category || 'reading', end_time: scheduled.planned_end_time, notes: notes || undefined };
           break;
       }
       await onConfirm(scheduled, value);
@@ -1085,6 +1085,18 @@ export default function DashboardScreen() {
   const [editSchedule, setEditSchedule] = useState<ScheduledActivity | null>(null);
   const [logModalSchedule, setLogModalSchedule] = useState<ScheduledActivity | null>(null);
 
+  // Pagination state for dashboard lists
+  const UPCOMING_PAGE_SIZE = 3;
+  const RECENT_PAGE_SIZE = 5;
+  const [upcomingVisible, setUpcomingVisible] = useState(UPCOMING_PAGE_SIZE);
+  const [recentVisible, setRecentVisible] = useState(RECENT_PAGE_SIZE);
+
+  // Reset pagination when data reloads or child changes
+  useEffect(() => {
+    setUpcomingVisible(UPCOMING_PAGE_SIZE);
+    setRecentVisible(RECENT_PAGE_SIZE);
+  }, [upcomingActivities.length, todayActivities.length]);
+
   const loadDashboardData = async (childId?: string, options?: { silent?: boolean }) => {
     setError('');
     if (!options?.silent) setLoading(true);
@@ -1152,6 +1164,7 @@ export default function DashboardScreen() {
     if (!selectedChild) throw new Error('No child selected');
     await logActivity(selectedChild.id, s.type as ActivityType, value);
     await cancelScheduledActivityNotifications(s.id);
+    await updateScheduledActivityStatus(s.id, 'completed');
     await loadDashboardData();
   };
 
@@ -1318,19 +1331,26 @@ export default function DashboardScreen() {
         {/* Upcoming Scheduled Activities — always visible */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Upcoming</Text>
-          <TouchableOpacity onPress={() => router.push('/log')}>
+          <TouchableOpacity onPress={() => router.push('/log?mode=schedule')}>
             <Text style={styles.sectionLink}>Schedule →</Text>
           </TouchableOpacity>
         </View>
         {upcomingActivities.length > 0 ? (
           <View style={styles.upcomingList}>
-            {upcomingActivities.slice(0, 3).map((s) => (
+            {upcomingActivities.slice(0, upcomingVisible).map((s) => (
               <UpcomingItem key={s.id} scheduled={s} onLogConfirm={setLogModalSchedule} onUpdate={setEditSchedule} onCancel={handleCancelSchedule} />
             ))}
-            {upcomingActivities.length > 3 && (
-              <Text style={styles.moreText}>
-                +{upcomingActivities.length - 3} more scheduled
-              </Text>
+            {upcomingActivities.length > upcomingVisible && (
+              <TouchableOpacity
+                style={styles.loadMoreBtn}
+                onPress={() => setUpcomingVisible(v => v + UPCOMING_PAGE_SIZE)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.loadMoreText}>
+                  Load more (+{upcomingActivities.length - upcomingVisible})
+                </Text>
+                <Ionicons name="chevron-down" size={14} color="#FF7F60" />
+              </TouchableOpacity>
             )}
           </View>
         ) : (
@@ -1357,13 +1377,20 @@ export default function DashboardScreen() {
 
         {todayActivities.length > 0 ? (
           <View style={styles.recentList}>
-            {todayActivities.slice(0, 5).map((a) => (
+            {todayActivities.slice(0, recentVisible).map((a) => (
               <RecentItem key={a.id} activity={a} />
             ))}
-            {todayActivities.length > 5 && (
-              <Text style={styles.moreText}>
-                +{todayActivities.length - 5} more activities
-              </Text>
+            {todayActivities.length > recentVisible && (
+              <TouchableOpacity
+                style={styles.loadMoreBtn}
+                onPress={() => setRecentVisible(v => v + RECENT_PAGE_SIZE)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.loadMoreText}>
+                  Load more (+{todayActivities.length - recentVisible})
+                </Text>
+                <Ionicons name="chevron-down" size={14} color="#FF7F60" />
+              </TouchableOpacity>
             )}
           </View>
         ) : (
@@ -1721,11 +1748,18 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginTop: 2,
   },
-  moreText: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
-    fontWeight: '500',
+  loadMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  loadMoreText: {
+    fontSize: 13,
+    color: '#FF7F60',
+    fontWeight: '600',
   },
 
   // Upcoming scheduled

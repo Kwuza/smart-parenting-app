@@ -19,6 +19,7 @@ import { DatePicker } from '../../components/DatePicker';
 import {
   createChild,
   updateChildRoutine,
+  updateChildSettings,
   RoutineData,
   getAgeMonths,
   formatDateLocal,
@@ -386,8 +387,18 @@ export default function AddChildWizardScreen() {
       // 4. Save min sleep setting if enabled (ages 2-5)
       // REMOVED: minimum sleep UI removed; auto-calculated from bed/wake times
 
-      // 5. Notifications (use child with routine data)
-      await scheduleChildNotifications(updatedChild);
+      // 5. Notifications — default all OFF so user opts in per child
+      const defaultNotifs: Record<string, boolean> = {
+        bedtime: false, wake_up: false,
+        breakfast: false, lunch: false, snack: false, dinner: false,
+        nap: false, activity: false, learn: false,
+        weekly_growth: false,
+      };
+      await updateChildSettings(child.id, { notifications: defaultNotifs });
+      await scheduleChildNotifications(updatedChild, defaultNotifs);
+      if (__DEV__) {
+        console.log(`[Wizard] Child created with all notifications OFF by default`);
+      }
       await loadChildren();
       const { Keyboard } = require('react-native');
       Keyboard.dismiss();

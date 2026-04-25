@@ -7,7 +7,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "postinstall": "rm -rf node_modules/@expo/dom-webview"
+    "postinstall": "node scripts/remove-dom-webview.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "~55.0.10",

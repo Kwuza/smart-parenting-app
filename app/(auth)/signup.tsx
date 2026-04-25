@@ -17,6 +17,7 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<FieldError[]>([]);
   const [success, setSuccess] = useState(false);
+  const [consented, setConsented] = useState(false);
   const { signUp } = useAuth();
   const router = useRouter();
 
@@ -45,6 +46,10 @@ export default function SignupScreen() {
       newErrors.push({ field: 'confirm', message: 'Please confirm your password' });
     } else if (password !== confirmPassword) {
       newErrors.push({ field: 'confirm', message: 'Passwords do not match' });
+    }
+
+    if (!consented) {
+      newErrors.push({ field: 'consent', message: 'You must accept the privacy policy to continue' });
     }
 
     setErrors(newErrors);
@@ -264,6 +269,37 @@ export default function SignupScreen() {
               </View>
             )}
           </View>
+
+          {/* DPA Consent */}
+          <View style={styles.consentRow}>
+            {/* Checkbox — only this toggles consent */}
+            <TouchableOpacity
+              style={styles.checkboxTouch}
+              onPress={() => {
+                setConsented(!consented);
+                setErrors((prev) => prev.filter((e) => e.field !== 'consent'));
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.checkbox, consented && styles.checkboxChecked]}>
+                {consented && <Ionicons name="checkmark" size={12} color="#fff" />}
+              </View>
+            </TouchableOpacity>
+
+            {/* Label text */}
+            <Text style={styles.consentText}>I agree to the </Text>
+
+            {/* Privacy policy link */}
+            <TouchableOpacity
+              onPress={() => router.push('/(auth)/privacy-policy')}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.consentLink}>Privacy Policy</Text>
+            </TouchableOpacity>
+          </View>
+          {getError('consent') && (
+            <Text style={styles.fieldError}>{getError('consent')}</Text>
+          )}
 
           {/* Signup Button */}
           <TouchableOpacity
@@ -497,6 +533,38 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '600',
+  },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 2,
+  },
+  checkboxTouch: {
+    padding: 2,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  checkboxChecked: {
+    backgroundColor: '#FF7F60',
+    borderColor: '#FF7F60',
+  },
+  consentText: {
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
+  },
+  consentLink: {
+    color: '#FF7F60',
+    fontWeight: '500',
   },
   bottomLink: {
     flexDirection: 'row',

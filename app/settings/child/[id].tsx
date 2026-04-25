@@ -218,7 +218,11 @@ export default function ChildSettingsScreen() {
   };
 
   const toggleNotif = (key: string) => {
-    setNotifToggles(prev => ({ ...prev, [key]: !prev[key] }));
+    const nextValue = !(notifToggles[key] ?? true);
+    if (__DEV__) {
+      console.log(`[ChildSettings] ${key} toggled ${nextValue ? 'ON ✅' : 'OFF ❌'}`);
+    }
+    setNotifToggles(prev => ({ ...prev, [key]: nextValue }));
   };
 
   const handleSave = async () => {
@@ -290,6 +294,15 @@ export default function ChildSettingsScreen() {
         bmi: routine.bmi,
       };
       await scheduleChildNotifications(updatedChild as Child, notifToggles);
+
+      if (__DEV__) {
+        const off = Object.entries(notifToggles).filter(([_, v]) => !v).map(([k]) => k);
+        if (off.length > 0) {
+          console.log(`[ChildSettings] Saved with ${off.length} notification(s) OFF for ${name.trim()}: ${off.join(', ')}`);
+        } else {
+          console.log(`[ChildSettings] All notifications ON for ${name.trim()}`);
+        }
+      }
 
       await loadChildren();
       setSubmitSuccess(`${name.trim()}'s settings updated!`);

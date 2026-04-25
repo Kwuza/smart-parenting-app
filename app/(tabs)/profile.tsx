@@ -153,9 +153,17 @@ export default function ProfileScreen() {
     const apply = async () => {
       try {
         if (notificationsEnabled) {
-          await Promise.all(children.map(c => scheduleChildNotifications(c as Child)));
+          await Promise.all(
+            children.map(c => scheduleChildNotifications(c as Child, c.notifications ?? {}))
+          );
+          if (__DEV__) {
+            console.log('[Profile] All notifications turned ON for all children');
+          }
         } else {
           await Promise.all(children.map(c => cancelChildNotifications(c.id)));
+          if (__DEV__) {
+            console.log('[Profile] All notifications turned OFF for all children');
+          }
         }
       } catch (e: any) {
         setError(e?.message || 'Failed to update notifications');
@@ -202,7 +210,7 @@ export default function ProfileScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={[styles.header, { paddingTop: 16 + insets.top }]}>
+        <View style={styles.header}>
           <Text style={styles.headerTitle}>Settings</Text>
         </View>
         <View style={styles.centerState}>
@@ -216,7 +224,7 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: 16 + insets.top }]}>
+      <View style={styles.header}>
         <Text style={styles.headerTitle}>Settings</Text>
       </View>
 

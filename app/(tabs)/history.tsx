@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -234,6 +234,15 @@ export default function HistoryScreen() {
   // Stats module state
   const [statsExpanded, setStatsExpanded] = useState(false);
   const [statsPeriod, setStatsPeriod] = useState<'weekly' | 'monthly'>('weekly');
+
+  // Pagination for selected-day activity list
+  const HISTORY_PAGE_SIZE = 10;
+  const [historyVisible, setHistoryVisible] = useState(HISTORY_PAGE_SIZE);
+
+  // Reset pagination when date or filter changes
+  useEffect(() => {
+    setHistoryVisible(HISTORY_PAGE_SIZE);
+  }, [selectedDate.getTime(), activeFilter]);
 
   // Load all activities for the current child (we filter by month/date client-side)
   const loadActivities = useCallback(async () => {
@@ -759,6 +768,28 @@ export default function HistoryScreen() {
     );
   };
 
+  const paginatedDayActivities = useMemo(() => {
+    return selectedDayActivities.slice(0, historyVisible);
+  }, [selectedDayActivities, historyVisible]);
+
+  const renderListFooter = () => (
+    <>
+      {selectedDayActivities.length > historyVisible && (
+        <TouchableOpacity
+          style={styles.loadMoreBtn}
+          onPress={() => setHistoryVisible(v => v + HISTORY_PAGE_SIZE)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.loadMoreText}>
+            Load more (+{selectedDayActivities.length - historyVisible})
+          </Text>
+          <Ionicons name="chevron-down" size={14} color="#FF7F60" />
+        </TouchableOpacity>
+      )}
+      {renderStatsSection()}
+    </>
+  );
+
   // --- Main render ---
 
   const content = selectedChild ? (
@@ -768,7 +799,7 @@ export default function HistoryScreen() {
       renderError()
     ) : (
       <FlatList
-        data={selectedDayActivities}
+        data={paginatedDayActivities}
         keyExtractor={(item) => item.id}
         renderItem={renderActivityItem}
         ListHeaderComponent={
@@ -785,7 +816,7 @@ export default function HistoryScreen() {
             )}
           </>
         }
-        ListFooterComponent={renderStatsSection}
+        ListFooterComponent={renderListFooter}
         ListEmptyComponent={renderEmpty}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -1199,6 +1230,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#64748B',
     fontWeight: '500',
+  },
+  loadMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  loadMoreText: {
+    fontSize: 13,
+    color: '#FF7F60',
+    fontWeight: '600',
   },
 
 });

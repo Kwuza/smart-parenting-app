@@ -143,7 +143,10 @@ async function scheduleOneTime(
         sound: 'default',
         data: { notificationId: id, childId, type, ...extraData },
       },
-      trigger: triggerDate as any,
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: triggerDate,
+      },
     });
     return identifier;
   } catch (e) {
@@ -303,7 +306,11 @@ export async function scheduleChildNotifications(
   if (!granted) return;
 
   // Cancel existing notifications for this child first
+  const previousCount = scheduledNotifications.filter(n => n.childId === child.id).length;
   await cancelChildNotifications(child.id);
+  if (__DEV__ && previousCount > 0) {
+    console.log(`[Notifications] Cancelled ${previousCount} existing notifications for ${child.name} before rescheduling`);
+  }
 
   const name = child.name;
 
@@ -313,6 +320,8 @@ export async function scheduleChildNotifications(
     return notifToggles[key] ?? true;
   };
 
+  const skipped: string[] = [];
+
   const addNotif = async (
     type: string,
     timeStr: string | null,
@@ -320,9 +329,18 @@ export async function scheduleChildNotifications(
     bodyFn: (n: string) => string,
     offsetMinutes = 0
   ) => {
-    if (!isEnabled(type)) return; // Skip if this notification type is disabled
+    if (!isEnabled(type)) {
+      skipped.push(type);
+      if (__DEV__) {
+        console.log(`[Notifications] ${type} for ${name} — toggle is OFF, skipping`);
+      }
+      return;
+    }
     const parsed = parseTime(timeStr);
-    if (!parsed) return;
+    if (!parsed) {
+      skipped.push(`${type} (no time set)`);
+      return;
+    }
     const adjusted = offsetTime(parsed.hour, parsed.minute, offsetMinutes);
     const id = `${type}-${child.id}`;
     const identifier = await scheduleDaily(
@@ -387,12 +405,24 @@ export async function scheduleChildNotifications(
   // Weekly growth check reminder
   if (isEnabled('weekly_growth')) {
     await scheduleWeeklyGrowthReminder(child, true);
+  } else {
+    skipped.push('weekly_growth');
+    if (__DEV__) {
+      console.log(`[Notifications] weekly_growth for ${name} — toggle is OFF, skipping`);
+    }
   }
 
   // One-off reminders for pending scheduled activities (5 min before min/max duration)
   await schedulePendingScheduledActivityNotifications(child);
 
-  if (__DEV__) console.log(`Scheduled ${scheduledNotifications.filter(n => n.childId === child.id).length} notifications for ${name}`);
+  const scheduledCount = scheduledNotifications.filter(n => n.childId === child.id).length;
+  if (__DEV__) {
+    if (skipped.length > 0) {
+      console.log(`[Notifications] Scheduled ${scheduledCount} notifications for ${name} (skipped ${skipped.length}: ${skipped.join(', ')})`);
+    } else {
+      console.log(`[Notifications] Scheduled ${scheduledCount} notifications for ${name}`);
+    }
+  }
 }
 
 /**
@@ -470,7 +500,12 @@ export async function cancelChildNotifications(childId: string) {
     } catch {}
   }
 
+  const removedCount = scheduledNotifications.filter(n => n.childId === childId).length;
   scheduledNotifications = scheduledNotifications.filter(n => n.childId !== childId);
+
+  if (__DEV__) {
+    console.log(`[Notifications] Cancelled ${identifiers.length} OS notifications and removed ${removedCount} tracked notifications for child ${childId}`);
+  }
 }
 
 /**
