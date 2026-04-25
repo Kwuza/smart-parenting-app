@@ -5,33 +5,40 @@
  * Creates a test auth user for the seed script.
  * 
  * Usage:
+ *   SUPABASE_URL=https://your-project.supabase.co \
+ *   TEST_PASSWORD=<dev-password> \
  *   node scripts/create_test_user.js <service_role_key>
- * 
+ *
+ * Optional:
+ *   TEST_EMAIL=test@smartparenting.dev
+ *
  * Get your service role key from:
  *   Supabase Dashboard → Settings → API → service_role (secret)
- * 
- * After running this, copy the printed UUID into seed_test_account.sql
- * and run the SQL in Supabase SQL Editor.
+ *
+ * After running this, copy the printed UUID into seed_test_account.sql.template
+ * if you want to run the optional development seed data.
  */
 
-const SUPABASE_URL = 'https://ttsoviuqkumlmdikqhjt.supabase.co';
-const TEST_EMAIL = 'test@nestnote.dev';
-const TEST_PASSWORD = 'Test1234!';
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL;
+const TEST_EMAIL = process.env.TEST_EMAIL || 'test@smartparenting.dev';
+const TEST_PASSWORD = process.env.TEST_PASSWORD;
 
 async function main() {
   const serviceKey = process.argv[2];
   
-  if (!serviceKey) {
-    console.error('Usage: node scripts/create_test_user.js <service_role_key>');
+  if (!serviceKey || !SUPABASE_URL || !TEST_PASSWORD) {
+    console.error('Usage: SUPABASE_URL=https://your-project.supabase.co TEST_PASSWORD=<dev-password> node scripts/create_test_user.js <service_role_key>');
     console.error('');
     console.error('Get your service_role key from:');
     console.error('  Supabase Dashboard → Settings → API → service_role (secret)');
+    console.error('');
+    console.error('Optional: set TEST_EMAIL to override test@smartparenting.dev');
     process.exit(1);
   }
 
   console.log('Creating test user...');
   console.log(`  Email: ${TEST_EMAIL}`);
-  console.log(`  Password: ${TEST_PASSWORD}`);
+  console.log('  Password: set via TEST_PASSWORD env');
   console.log('');
 
   // Create user via Supabase Admin API
@@ -73,10 +80,10 @@ async function main() {
         console.log(`  UUID: ${user.id}`);
         console.log('═════════════════════════════════════════');
         console.log('');
-        console.log('Copy this UUID into seed_test_account.sql:');
+        console.log('Copy this UUID into seed_test_account.sql.template if you want optional seed data:');
         console.log(`  test_parent_id UUID := '${user.id}';`);
         console.log('');
-        console.log('Then run seed_test_account.sql in Supabase SQL Editor.');
+        console.log('Then copy the template contents into Supabase SQL Editor.');
       }
       return;
     }
@@ -91,17 +98,17 @@ async function main() {
   console.log('  TEST USER CREATED');
   console.log(`  UUID: ${userId}`);
   console.log(`  Email: ${TEST_EMAIL}`);
-  console.log(`  Password: ${TEST_PASSWORD}`);
+  console.log('  Password: set via TEST_PASSWORD env');
   console.log('═════════════════════════════════════════');
   console.log('');
   console.log('Next steps:');
-  console.log(`1. Open seed_test_account.sql`);
+  console.log(`1. Open seed_test_account.sql.template`);
   console.log(`2. Replace 'YOUR_USER_UUID' with: ${userId}`);
-  console.log(`3. Run the SQL in Supabase SQL Editor`);
+  console.log(`3. Copy the template contents into Supabase SQL Editor if you want optional seed data`);
   console.log('');
   console.log('Login credentials:');
   console.log(`  Email: ${TEST_EMAIL}`);
-  console.log(`  Password: ${TEST_PASSWORD}`);
+  console.log('  Password: set via TEST_PASSWORD env');
 }
 
 main().catch(err => {
