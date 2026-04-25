@@ -1455,9 +1455,6 @@ const styles = StyleSheet.create({
 
   // ── Compact time block (meals / active) ──
   compactTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingVertical: 10,
     paddingHorizontal: 12,
     backgroundColor: '#FFFDFF',
@@ -1469,17 +1466,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#0F172A',
-    width: 72,
+    marginBottom: 8,
   },
   compactTimeRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'space-between',
+    gap: 8,
   },
   compactPresetRow: {
     flexDirection: 'row',
+    flexShrink: 1,
+    flexWrap: 'wrap',
     gap: 4,
-    marginRight: 6,
+    marginRight: 4,
   },
   compactPresetBtn: {
     paddingHorizontal: 7,
