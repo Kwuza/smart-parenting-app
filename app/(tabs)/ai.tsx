@@ -132,9 +132,17 @@ function TrendIndicator({ trend }: { trend: string | null | undefined }) {
   );
 }
 
-function RecommendationCard({ rec }: { rec: Recommendation }) {
+const RECENCY_LABELS = ['Latest', '2nd Latest', 'Oldest'];
+const RECENCY_COLORS = ['#10B981', '#F59E0B', '#94A3B8'];
+
+function RecommendationCard({ rec, recencyRank }: { rec: Recommendation; recencyRank: number }) {
   const catColors = CATEGORY_COLORS[rec.category || 'general'] || CATEGORY_COLORS.general;
   const priorityColor = PRIORITY_COLORS[rec.priority || 'low'] || PRIORITY_COLORS.low;
+  const dateStr = new Date(rec.created_at).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 
   return (
     <View style={styles.recCard}>
@@ -156,6 +164,14 @@ function RecommendationCard({ rec }: { rec: Recommendation }) {
         </View>
       </View>
       <Text style={styles.recContent}>{rec.content}</Text>
+      <View style={styles.recFooter}>
+        <View style={[styles.recencyBadge, { backgroundColor: `${RECENCY_COLORS[recencyRank]}15` }]}>
+          <Text style={[styles.recencyText, { color: RECENCY_COLORS[recencyRank] }]}>
+            {RECENCY_LABELS[recencyRank]}
+          </Text>
+        </View>
+        <Text style={styles.recDate}>{dateStr}</Text>
+      </View>
     </View>
   );
 }
@@ -179,6 +195,15 @@ export default function AIScreen() {
   const [analysisSummary, setAnalysisSummary] = useState<AnalysisSummary | null>(null);
   const [rateLimited, setRateLimited] = useState(false);
   const [hasActivityData, setHasActivityData] = useState(false);
+
+  // Pagination for recommendations
+  const INSIGHTS_PAGE_SIZE = 5;
+  const [insightsVisible, setInsightsVisible] = useState(INSIGHTS_PAGE_SIZE);
+
+  // Reset pagination when filter changes
+  useEffect(() => {
+    setInsightsVisible(INSIGHTS_PAGE_SIZE);
+  }, [activeFilter]);
 
   const getAnalysisKey = (childId: string) => `last_analysis_${childId}`;
 
@@ -268,22 +293,49 @@ export default function AIScreen() {
 
   const filtered = useMemo(() => {
     let base = recommendations;
-    if (activeFilter === 'all') {
-      return [...base].sort(
-        (a, b) => (PRIORITY_ORDER[a.priority || 'low'] || 2) - (PRIORITY_ORDER[b.priority || 'low'] || 2)
+    if (activeFilter !== 'all') {
+      if (['high', 'medium', 'low'].includes(activeFilter)) {
+        base = base.filter((r) => r.priority === activeFilter);
+      } else if (['risk', 'opportunity', 'follow_up', 'positive'].includes(activeFilter)) {
+        base = base.filter((r) => r.insight_type === activeFilter);
+      } else {
+        base = base.filter((r) => r.category === activeFilter);
+      }
+    }
+
+    // Group by category, keep only the 3 most recent per category, assign recency rank
+    const grouped = new Map<string, Recommendation[]>();
+    for (const rec of base) {
+      const cat = rec.category || 'general';
+      if (!grouped.has(cat)) grouped.set(cat, []);
+      grouped.get(cat)!.push(rec);
+    }
+
+    const result: { rec: Recommendation; recencyRank: number }[] = [];
+    for (const [cat, list] of grouped) {
+      const sorted = [...list].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
+      const top3 = sorted.slice(0, 3);
+      for (let i = 0; i < top3.length; i++) {
+        result.push({ rec: top3[i], recencyRank: i });
+      }
     }
-    if (['high', 'medium', 'low'].includes(activeFilter)) {
-      base = recommendations.filter((r) => r.priority === activeFilter);
-    } else if (['risk', 'opportunity', 'follow_up', 'positive'].includes(activeFilter)) {
-      base = recommendations.filter((r) => r.insight_type === activeFilter);
-    } else {
-      base = recommendations.filter((r) => r.category === activeFilter);
-    }
-    return [...base].sort(
-      (a, b) => (PRIORITY_ORDER[a.priority || 'low'] || 2) - (PRIORITY_ORDER[b.priority || 'low'] || 2)
-    );
+
+    // Sort by category name then by date desc for consistent grouping
+    result.sort((a, b) => {
+      const catA = a.rec.category || 'general';
+      const catB = b.rec.category || 'general';
+      if (catA !== catB) return catA.localeCompare(catB);
+      return new Date(b.rec.created_at).getTime() - new Date(a.rec.created_at).getTime();
+    });
+
+    return result;
   }, [recommendations, activeFilter]);
+
+  const paginated = useMemo(() => {
+    return filtered.slice(0, insightsVisible);
+  }, [filtered, insightsVisible]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -402,9 +454,21 @@ export default function AIScreen() {
           </View>
         ) : (
           <View style={styles.recList}>
-            {filtered.map((rec, i) => (
-              <RecommendationCard key={rec.id || i} rec={rec} />
+            {paginated.map(({ rec, recencyRank }, i) => (
+              <RecommendationCard key={rec.id || i} rec={rec} recencyRank={recencyRank} />
             ))}
+            {filtered.length > insightsVisible && (
+              <TouchableOpacity
+                style={styles.loadMoreBtn}
+                onPress={() => setInsightsVisible(v => v + INSIGHTS_PAGE_SIZE)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.loadMoreText}>
+                  Load more (+{filtered.length - insightsVisible})
+                </Text>
+                <Ionicons name="chevron-down" size={14} color="#FF7F60" />
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
@@ -647,6 +711,25 @@ const styles = StyleSheet.create({
     color: '#334155',
     lineHeight: 20,
   },
+  recFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  recencyBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  recencyText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  recDate: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
   emptyCard: {
     alignItems: 'center',
     gap: 8,
@@ -681,5 +764,18 @@ const styles = StyleSheet.create({
     color: '#991B1B',
     flex: 1,
     fontWeight: '500',
+  },
+  loadMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  loadMoreText: {
+    fontSize: 13,
+    color: '#FF7F60',
+    fontWeight: '600',
   },
 });
