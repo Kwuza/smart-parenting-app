@@ -757,8 +757,8 @@ Deno.serve(async (req: Request) => {
         headers: {
           "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "https://nestnote.app",
-          "X-Title": "NestNote",
+          "HTTP-Referer": "https://smartparenting.app",
+          "X-Title": "SmartParenting",
         },
         signal: controller.signal,
         body: JSON.stringify({
