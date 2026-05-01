@@ -14,7 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { BarChart, PieChart } from 'react-native-chart-kit';
 import { useFocusEffect } from 'expo-router';
 import { useApp } from '../../stores/auth';
-import { getActivities, Activity } from '../../lib/api';
+import { getActivities, updateActivity, deleteActivity, Activity, UpdateActivityInput } from '../../lib/api';
+import { getActivityLabel, getDurationMinutes, getFoodGroups } from '../../lib/activity-values';
+import ActivityActionsSheet from '../../components/history/ActivityActionsSheet';
+import EditActivityModal from '../../components/history/EditActivityModal';
+import DeleteActivityModal from '../../components/history/DeleteActivityModal';
 import ScreenHeader from '../../components/ScreenHeader';
 
 // --- Types ---
@@ -81,33 +85,6 @@ function formatTime(dateStr: string): string {
     minute: '2-digit',
     hour12: true,
   });
-}
-
-function getActivityLabel(type: string, value: Record<string, any>): string {
-  const h = value.hours || 0;
-  const m = value.minutes || 0;
-  const dur = h > 0 ? `${h}h ${m}m` : `${m}m`;
-
-  switch (type) {
-    case 'screen_time':
-      return `Screen time (${value.category || 'leisure'}) — ${dur}${value.device ? ` on ${value.device}` : ''}`;
-    case 'sleep':
-      return `Sleep — ${dur}${value.quality ? ` (${value.quality})` : ''}`;
-    case 'nap':
-      return `Nap — ${dur}${value.quality ? ` (${value.quality})` : ''}`;
-    case 'meal': {
-      const meal = value.meal_type || 'meal';
-      const mealTime = value.start_time ? ` @ ${value.start_time}` : '';
-      const foods = value.food_groups?.length ? ` · ${value.food_groups.join(', ')}` : '';
-      return `${meal.charAt(0).toUpperCase() + meal.slice(1)}${mealTime}${value.quality ? ` — ${value.quality}` : ''}${foods}`;
-    }
-    case 'physical_activity':
-      return `Physical — ${dur}${value.activity ? ` (${value.activity})` : ''}`;
-    case 'education':
-      return `Learning — ${dur}${value.subject ? ` (${value.subject.replace('_', ' ')})` : ''}`;
-    default:
-      return type;
-  }
 }
 
 function formatDateHeader(date: Date): string {
@@ -235,6 +212,14 @@ export default function HistoryScreen() {
   const [error, setError] = useState('');
   const [activeFilter, setActiveFilter] = useState<string>('all');
 
+  // Mutation/action state
+  const [actionActivity, setActionActivity] = useState<Activity | null>(null);
+  const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+  const [deleteActivityTarget, setDeleteActivityTarget] = useState<Activity | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [mutatingActivityId, setMutatingActivityId] = useState<string | null>(null);
+
   // Stats module state
   const [statsExpanded, setStatsExpanded] = useState(false);
   const [statsPeriod, setStatsPeriod] = useState<'weekly' | 'monthly'>('weekly');
@@ -249,29 +234,45 @@ export default function HistoryScreen() {
   }, [selectedDate.getTime(), activeFilter]);
 
   // Load all activities for the current child (we filter by month/date client-side)
-  const loadActivities = useCallback(async () => {
-    if (!selectedChild) return;
+  const loadActivities = useCallback(async (options?: { silent?: boolean; childId?: string }) => {
+    const childId = options?.childId ?? useApp.getState().selectedChild?.id;
+    if (!childId) {
+      setMonthActivities([]);
+      setLoading(false);
+      return;
+    }
     try {
       setError('');
-      setLoading(true);
-      const data = await getActivities(selectedChild.id);
+      if (!options?.silent) setLoading(true);
+      const data = await getActivities(childId);
       setMonthActivities(data);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load activities');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load activities';
+      setError(message);
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
-  }, [selectedChild]);
+  }, []);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadActivities();
+    await loadActivities({ silent: true });
     setRefreshing(false);
   };
 
+  useEffect(() => {
+    if (selectedChild?.id) {
+      loadActivities({ childId: selectedChild.id });
+    } else {
+      setMonthActivities([]);
+      setLoading(false);
+    }
+  }, [selectedChild?.id, loadActivities]);
+
   useFocusEffect(
     useCallback(() => {
-      loadActivities();
+      const childId = useApp.getState().selectedChild?.id;
+      loadActivities({ childId });
     }, [loadActivities])
   );
 
@@ -359,8 +360,7 @@ export default function HistoryScreen() {
         );
         let totalMins = 0;
         for (const a of dayActs) {
-          const v = a.value as Record<string, any>;
-          totalMins += ((v.hours || 0) * 60 + (v.minutes || 0));
+          totalMins += getDurationMinutes(a.value);
         }
         return parseFloat((totalMins / 60).toFixed(1));
       }),
@@ -374,8 +374,7 @@ export default function HistoryScreen() {
     });
     const foodCounts: Record<string, number> = {};
     for (const m of weekMeals) {
-      const v = m.value as Record<string, any>;
-      const groups = v.food_groups || [];
+      const groups = getFoodGroups(m.value);
       for (const g of groups) {
         foodCounts[g] = (foodCounts[g] || 0) + 1;
       }
@@ -415,8 +414,7 @@ export default function HistoryScreen() {
           if (recDate.getFullYear() !== year || recDate.getMonth() !== month) continue;
           const dayNum = recDate.getDate();
           if (dayNum >= wk.start && dayNum <= wk.end) {
-            const v = a.value as Record<string, any>;
-            totalMins += ((v.hours || 0) * 60 + (v.minutes || 0));
+            totalMins += getDurationMinutes(a.value);
           }
         }
         return parseFloat((totalMins / 60).toFixed(1));
@@ -432,8 +430,7 @@ export default function HistoryScreen() {
     });
     const foodCounts: Record<string, number> = {};
     for (const m of monthMeals) {
-      const v = m.value as Record<string, any>;
-      const groups = v.food_groups || [];
+      const groups = getFoodGroups(m.value);
       for (const g of groups) {
         foodCounts[g] = (foodCounts[g] || 0) + 1;
       }
@@ -475,6 +472,48 @@ export default function HistoryScreen() {
     setViewYear(now.getFullYear());
     setViewMonth(now.getMonth());
     setSelectedDate(now);
+  };
+
+  const clearSuccessSoon = () => {
+    setTimeout(() => setSuccessMessage(null), 2200);
+  };
+
+  const handleSaveActivity = async (updates: UpdateActivityInput) => {
+    if (!editingActivity) return;
+    setMutationError(null);
+    setMutatingActivityId(editingActivity.id);
+    try {
+      await updateActivity(editingActivity.id, updates);
+      setEditingActivity(null);
+      await loadActivities({ silent: true });
+      setSuccessMessage('Activity updated.');
+      clearSuccessSoon();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unable to update activity. Try again.';
+      if (__DEV__) console.error('Activity update failed', err);
+      setMutationError(message);
+    } finally {
+      setMutatingActivityId(null);
+    }
+  };
+
+  const handleDeleteActivity = async () => {
+    if (!deleteActivityTarget) return;
+    setMutationError(null);
+    setMutatingActivityId(deleteActivityTarget.id);
+    try {
+      await deleteActivity(deleteActivityTarget.id);
+      setDeleteActivityTarget(null);
+      await loadActivities({ silent: true });
+      setSuccessMessage('Activity deleted.');
+      clearSuccessSoon();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unable to delete activity. Try again.';
+      if (__DEV__) console.error('Activity delete failed', err);
+      setMutationError(message);
+    } finally {
+      setMutatingActivityId(null);
+    }
   };
 
   // --- Renderers ---
@@ -598,7 +637,7 @@ export default function HistoryScreen() {
 
   const renderActivityItem = ({ item }: { item: Activity }) => {
     const config = getTypeConfig(item.type);
-    const value = item.value as Record<string, any>;
+    const isMutating = mutatingActivityId === item.id;
 
     return (
       <View style={styles.activityCard}>
@@ -609,12 +648,38 @@ export default function HistoryScreen() {
             color={config?.color || '#64748B'}
           />
         </View>
-        <View style={styles.activityContent}>
+        <TouchableOpacity
+          style={styles.activityContent}
+          activeOpacity={0.75}
+          onPress={() => {
+            setMutationError(null);
+            setSuccessMessage(null);
+            setActionActivity(item);
+          }}
+        >
           <Text style={styles.activityLabel} numberOfLines={2}>
-            {getActivityLabel(item.type, value)}
+            {getActivityLabel(item.type, item.value)}
           </Text>
+        </TouchableOpacity>
+        <View style={styles.activityTrailing}>
+          <Text style={styles.activityTime}>{formatTime(item.recorded_at)}</Text>
+          <TouchableOpacity
+            style={styles.activityActionBtn}
+            activeOpacity={0.7}
+            disabled={isMutating}
+            onPress={() => {
+              setMutationError(null);
+              setSuccessMessage(null);
+              setActionActivity(item);
+            }}
+          >
+            {isMutating ? (
+              <ActivityIndicator size="small" color="#FF7F60" />
+            ) : (
+              <Ionicons name="ellipsis-horizontal" size={18} color="#64748B" />
+            )}
+          </TouchableOpacity>
         </View>
-        <Text style={styles.activityTime}>{formatTime(item.recorded_at)}</Text>
       </View>
     );
   };
@@ -647,7 +712,7 @@ export default function HistoryScreen() {
       </View>
       <Text style={styles.errorTitle}>Something went wrong</Text>
       <Text style={styles.errorMessage}>{error}</Text>
-      <TouchableOpacity style={styles.retryBtn} onPress={loadActivities} activeOpacity={0.7}>
+      <TouchableOpacity style={styles.retryBtn} onPress={() => loadActivities()} activeOpacity={0.7}>
         <Ionicons name="refresh-outline" size={16} color="#FFFFFF" />
         <Text style={styles.retryText}>Retry</Text>
       </TouchableOpacity>
@@ -810,6 +875,15 @@ export default function HistoryScreen() {
           <>
             {renderCalendar()}
             {renderFilterBar()}
+            {successMessage ? (
+              <View style={styles.successBanner}>
+                <Ionicons name="checkmark-circle-outline" size={18} color="#059669" />
+                <Text style={styles.successBannerText}>{successMessage}</Text>
+                <TouchableOpacity onPress={() => setSuccessMessage(null)} activeOpacity={0.7}>
+                  <Ionicons name="close" size={16} color="#059669" />
+                </TouchableOpacity>
+              </View>
+            ) : null}
             {selectedDayActivities.length > 0 && (
               <View style={styles.daySectionHeader}>
                 <Text style={styles.daySectionText}>
@@ -838,6 +912,47 @@ export default function HistoryScreen() {
     <View style={styles.container}>
       {renderHeader()}
       {content}
+      <ActivityActionsSheet
+        visible={Boolean(actionActivity)}
+        activity={actionActivity}
+        formatTime={formatTime}
+        onClose={() => setActionActivity(null)}
+        onEdit={(activity) => {
+          setActionActivity(null);
+          setMutationError(null);
+          setEditingActivity(activity);
+        }}
+        onDelete={(activity) => {
+          setActionActivity(null);
+          setMutationError(null);
+          setDeleteActivityTarget(activity);
+        }}
+      />
+      <EditActivityModal
+        visible={Boolean(editingActivity)}
+        activity={editingActivity}
+        childName={selectedChild?.name}
+        loading={Boolean(editingActivity && mutatingActivityId === editingActivity.id)}
+        error={mutationError}
+        onCancel={() => {
+          if (mutatingActivityId) return;
+          setMutationError(null);
+          setEditingActivity(null);
+        }}
+        onSave={handleSaveActivity}
+      />
+      <DeleteActivityModal
+        visible={Boolean(deleteActivityTarget)}
+        activity={deleteActivityTarget}
+        loading={Boolean(deleteActivityTarget && mutatingActivityId === deleteActivityTarget.id)}
+        error={mutationError}
+        onCancel={() => {
+          if (mutatingActivityId) return;
+          setMutationError(null);
+          setDeleteActivityTarget(null);
+        }}
+        onConfirm={handleDeleteActivity}
+      />
     </View>
   );
 }
@@ -992,6 +1107,27 @@ const styles = StyleSheet.create({
   },
 
   // Day section header
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    backgroundColor: '#ECFDF5',
+  },
+  successBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#059669',
+  },
+
+  // Day section header
   daySectionHeader: {
     paddingHorizontal: 20,
     paddingVertical: 10,
@@ -1032,6 +1168,7 @@ const styles = StyleSheet.create({
   },
   activityContent: {
     flex: 1,
+    minWidth: 0,
   },
   activityLabel: {
     fontSize: 14,
@@ -1039,11 +1176,27 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     lineHeight: 20,
   },
+  activityTrailing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
   activityTime: {
     fontSize: 13,
     color: '#94A3B8',
     fontWeight: '500',
     flexShrink: 0,
+  },
+  activityActionBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Empty state

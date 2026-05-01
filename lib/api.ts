@@ -1,15 +1,23 @@
 import { supabase } from './supabase';
+import type { Database, Json } from './database.types';
 
 // Activity types
 export type ActivityType = 'screen_time' | 'sleep' | 'nap' | 'meal' | 'physical_activity' | 'education';
+export type ActivityValue = Record<string, unknown>;
 
 export interface Activity {
   id: string;
   child_id: string;
   type: ActivityType;
-  value: Record<string, any>;
+  value: ActivityValue;
   recorded_at: string;
   created_at: string;
+}
+
+export interface UpdateActivityInput {
+  type?: ActivityType;
+  value?: ActivityValue;
+  recorded_at?: string;
 }
 
 export interface Child {
@@ -118,7 +126,7 @@ export async function getChildren() {
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return data as Child[];
+  return data as unknown as Child[];
 }
 
 export async function createChild(name: string, dateOfBirth: string, userId: string, avatarUrl?: string) {
@@ -178,7 +186,7 @@ export function toLocalNoonISOString(date: Date): string {
   ).toISOString();
 }
 
-export async function logActivity(childId: string, type: ActivityType, value: Record<string, any>, date?: Date) {
+export async function logActivity(childId: string, type: ActivityType, value: ActivityValue, date?: Date) {
   const recordedAt = date ? toLocalNoonISOString(date) : new Date().toISOString();
   const { data, error } = await (supabase as any)
     .from('activities')
@@ -187,6 +195,35 @@ export async function logActivity(childId: string, type: ActivityType, value: Re
     .single();
   if (error) throw error;
   return data as Activity;
+}
+
+export async function updateActivity(
+  id: string,
+  updates: UpdateActivityInput
+): Promise<Activity> {
+  const dbUpdates: Database['public']['Tables']['activities']['Update'] = {};
+  if (updates.type !== undefined) dbUpdates.type = updates.type;
+  if (updates.value !== undefined) dbUpdates.value = updates.value as unknown as Json;
+  if (updates.recorded_at !== undefined) dbUpdates.recorded_at = updates.recorded_at;
+
+  const { data, error } = await supabase
+    .from('activities')
+    .update(dbUpdates)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as unknown as Activity;
+}
+
+export async function deleteActivity(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('activities')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
 }
 
 export async function getActivities(childId: string, type?: ActivityType) {
@@ -246,7 +283,7 @@ export async function analyzeChild(childId: string) {
     }),
     supabase.from('children').select('*').eq('id', childId).single().then(({ data, error }) => {
       if (error) throw error;
-      return data as Child;
+      return data as unknown as Child;
     }),
   ]);
 
