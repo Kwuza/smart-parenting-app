@@ -10,6 +10,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type FilterValue = 'all' | 'sleep' | 'meal' | 'education' | 'screen_time' | 'high' | 'medium' | 'low' | 'risk' | 'opportunity' | 'follow_up' | 'positive';
 
+// ---------------------------------------------------------------------------
+// AI Insights Rate Limiting Configuration
+// ---------------------------------------------------------------------------
+// RATE_LIMIT_PERIOD_MS: Time window for rate limiting (in milliseconds).
+//   Set to 0 to disable period-based resetting (count persists until manually reset).
+//   Examples: 0 (disabled), 24 * 60 * 60 * 1000 (1 day), 7 * 24 * 60 * 60 * 1000 (1 week)
+//
+// RATE_LIMIT_MAX: Maximum AI analysis runs per child within the period.
+//   Set to Infinity for unlimited (debugging mode).
+//   Examples: 1 (once per period), 3 (three per period), Infinity (unlimited)
+//
+// To enable rate limiting for production, set RATE_LIMIT_MAX to a finite number
+// and RATE_LIMIT_PERIOD_MS to your desired window (e.g., 24 * 60 * 60 * 1000).
+// ---------------------------------------------------------------------------
+const RATE_LIMIT_PERIOD_MS = 0;       // 0 = disabled (no period reset)
+const RATE_LIMIT_MAX = Infinity;      // Infinity = unlimited for debugging
+
 const FILTERS: { key: FilterValue; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'sleep', label: 'Sleep' },
@@ -205,28 +222,64 @@ export default function AIScreen() {
     setInsightsVisible(INSIGHTS_PAGE_SIZE);
   }, [activeFilter]);
 
-  const getAnalysisKey = (childId: string) => `last_analysis_${childId}`;
+  const getAnalysisCountKey = (childId: string) => `analysis_count_${childId}`;
+  const getAnalysisPeriodKey = (childId: string) => `analysis_period_${childId}`;
 
   const checkRateLimit = useCallback(async (childId: string) => {
+    if (RATE_LIMIT_MAX === Infinity) {
+      setRateLimited(false);
+      return;
+    }
     try {
-      const key = getAnalysisKey(childId);
-      const stored = await AsyncStorage.getItem(key);
-      if (!stored) { setRateLimited(false); return; }
-      const lastDate = new Date(stored);
-      const now = new Date();
-      const sameDay = lastDate.getFullYear() === now.getFullYear() &&
-        lastDate.getMonth() === now.getMonth() &&
-        lastDate.getDate() === now.getDate();
-      setRateLimited(sameDay);
+      const countKey = getAnalysisCountKey(childId);
+      const periodKey = getAnalysisPeriodKey(childId);
+
+      const [countStr, periodStr] = await Promise.all([
+        AsyncStorage.getItem(countKey),
+        AsyncStorage.getItem(periodKey),
+      ]);
+
+      const now = Date.now();
+      const count = countStr ? parseInt(countStr, 10) : 0;
+
+      // Check if period has expired
+      if (RATE_LIMIT_PERIOD_MS > 0 && periodStr) {
+        const periodStart = parseInt(periodStr, 10);
+        if (now - periodStart >= RATE_LIMIT_PERIOD_MS) {
+          // Period expired, reset
+          await Promise.all([
+            AsyncStorage.setItem(countKey, '0'),
+            AsyncStorage.setItem(periodKey, now.toString()),
+          ]);
+          setRateLimited(false);
+          return;
+        }
+      }
+
+      setRateLimited(count >= RATE_LIMIT_MAX);
     } catch {
       setRateLimited(false);
     }
   }, []);
 
   const markAnalysisRun = async (childId: string) => {
+    if (RATE_LIMIT_MAX === Infinity) return;
     try {
-      await AsyncStorage.setItem(getAnalysisKey(childId), new Date().toISOString());
-      setRateLimited(true);
+      const countKey = getAnalysisCountKey(childId);
+      const periodKey = getAnalysisPeriodKey(childId);
+      const countStr = await AsyncStorage.getItem(countKey);
+      const count = countStr ? parseInt(countStr, 10) + 1 : 1;
+
+      // Initialize period start if needed
+      if (RATE_LIMIT_PERIOD_MS > 0) {
+        const periodStr = await AsyncStorage.getItem(periodKey);
+        if (!periodStr) {
+          await AsyncStorage.setItem(periodKey, Date.now().toString());
+        }
+      }
+
+      await AsyncStorage.setItem(countKey, count.toString());
+      setRateLimited(count >= RATE_LIMIT_MAX);
     } catch {
       // non-critical
     }
