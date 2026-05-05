@@ -128,7 +128,8 @@ CREATE TABLE IF NOT EXISTS scheduled_activities (
   max_notification_id TEXT,
   meal_type TEXT,
   food_groups TEXT[],
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  deleted_at TIMESTAMPTZ DEFAULT NULL
 );
 
 COMMENT ON TABLE scheduled_activities IS 'Parent-planned child activities with min/max time and notifications';
@@ -164,7 +165,8 @@ ALTER TABLE recommendations
 
 ALTER TABLE scheduled_activities
   ADD COLUMN IF NOT EXISTS meal_type TEXT,
-  ADD COLUMN IF NOT EXISTS food_groups TEXT[];
+  ADD COLUMN IF NOT EXISTS food_groups TEXT[],
+  ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;
 
 ALTER TABLE scheduled_activities ALTER COLUMN min_duration_minutes DROP NOT NULL;
 ALTER TABLE scheduled_activities ALTER COLUMN max_duration_minutes DROP NOT NULL;
@@ -505,11 +507,13 @@ CREATE POLICY "alerts_delete" ON alerts
 
 CREATE POLICY "scheduled_select" ON scheduled_activities
   FOR SELECT USING (
+    deleted_at IS NULL AND
     child_id IN (SELECT id FROM children WHERE parent_id = auth.uid() AND deleted_at IS NULL)
   );
 
 CREATE POLICY "scheduled_insert" ON scheduled_activities
   FOR INSERT WITH CHECK (
+    deleted_at IS NULL AND
     child_id IN (SELECT id FROM children WHERE parent_id = auth.uid() AND deleted_at IS NULL)
   );
 

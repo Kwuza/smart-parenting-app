@@ -242,6 +242,7 @@ export type Database = {
           category: string | null
           child_id: string
           created_at: string | null
+          deleted_at: string | null
           food_groups: string[] | null
           id: string
           max_duration_minutes: number | null
@@ -258,6 +259,7 @@ export type Database = {
           category?: string | null
           child_id: string
           created_at?: string | null
+          deleted_at?: string | null
           food_groups?: string[] | null
           id?: string
           max_duration_minutes?: number | null
@@ -274,6 +276,7 @@ export type Database = {
           category?: string | null
           child_id?: string
           created_at?: string | null
+          deleted_at?: string | null
           food_groups?: string[] | null
           id?: string
           max_duration_minutes?: number | null

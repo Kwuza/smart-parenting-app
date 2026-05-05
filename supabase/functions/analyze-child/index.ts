@@ -387,7 +387,7 @@ function computeConfidence(compact: CompactActivitySummary, previousRecs: Previo
 async function queryScheduledActivities(childId: string): Promise<ScheduledSummary> {
   try {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/scheduled_activities?child_id=eq.${childId}&order=planned_end_time.asc`,
+      `${SUPABASE_URL}/rest/v1/scheduled_activities?child_id=eq.${childId}&deleted_at=is.null&order=planned_end_time.asc`,
       {
         headers: {
           Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,

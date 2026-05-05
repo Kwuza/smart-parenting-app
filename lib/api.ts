@@ -312,6 +312,7 @@ export interface ScheduledActivity {
   meal_type: string | null;
   food_groups: string[] | null;
   created_at: string;
+  deleted_at: string | null;
 }
 
 export async function scheduleActivity(
@@ -349,13 +350,19 @@ export async function scheduleActivity(
   return data as ScheduledActivity;
 }
 
-export async function getScheduledActivities(childId: string, status?: string) {
+export async function getScheduledActivities(
+  childId: string,
+  status?: string,
+  options?: { fromStartTime?: string }
+) {
   let query = supabase
     .from('scheduled_activities')
     .select('*')
     .eq('child_id', childId)
+    .is('deleted_at', null)
     .order('start_time', { ascending: true });
   if (status) query = query.eq('status', status);
+  if (options?.fromStartTime) query = query.gte('start_time', options.fromStartTime);
   const { data, error } = await query;
   if (error) throw error;
   return data as ScheduledActivity[];

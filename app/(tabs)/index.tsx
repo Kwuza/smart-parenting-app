@@ -1162,8 +1162,8 @@ export default function DashboardScreen() {
 
   const handleLogScheduleConfirm = async (s: ScheduledActivity, value: Record<string, any>) => {
     if (!selectedChild) throw new Error('No child selected');
-    await logActivity(selectedChild.id, s.type as ActivityType, value);
     await cancelScheduledActivityNotifications(s.id);
+    await logActivity(selectedChild.id, s.type as ActivityType, value);
     await updateScheduledActivityStatus(s.id, 'completed');
     await loadDashboardData();
   };

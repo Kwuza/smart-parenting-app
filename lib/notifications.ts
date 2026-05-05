@@ -195,11 +195,71 @@ export async function scheduleScheduledActivityNotifications(
 
   if (activity.status !== 'pending') return;
 
-  const start = new Date(activity.start_time);
+  // Parse start_time as local time (not UTC) to get the correct trigger moment
+  const startParts = activity.start_time.match(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+  const start = startParts
+    ? new Date(
+        parseInt(startParts[1], 10),
+        parseInt(startParts[2], 10) - 1,
+        parseInt(startParts[3], 10),
+        parseInt(startParts[4], 10),
+        parseInt(startParts[5], 10),
+        parseInt(startParts[6], 10)
+      )
+    : new Date(activity.start_time);
+
   const label = getActivityReminderLabel(activity);
   const minMinutes = activity.min_duration_minutes;
   const maxMinutes = activity.max_duration_minutes;
 
+  // Notification at activity start time
+  const startTriggerId = `scheduled-start-${activity.id}`;
+  const startIdentifier = await scheduleOneTime(
+    startTriggerId,
+    activity.child_id,
+    activity.type,
+    start,
+    `${childName}'s ${label} starting now 🕐`,
+    `Time for ${childName}'s scheduled ${label}.`,
+    { scheduleId: activity.id, reminderStage: 'start' }
+  );
+  if (startIdentifier) {
+    scheduledNotifications.push({
+      id: startTriggerId,
+      identifier: startIdentifier,
+      childId: activity.child_id,
+      type: activity.type,
+      hour: start.getHours(),
+      minute: start.getMinutes(),
+    });
+  }
+
+  // 15-minute pre-reminder before activity starts
+  const pre15Trigger = new Date(start.getTime() - 15 * 60000);
+  if (pre15Trigger.getTime() > Date.now()) {
+    const pre15Id = `scheduled-pre-15-${activity.id}`;
+    const pre15Identifier = await scheduleOneTime(
+      pre15Id,
+      activity.child_id,
+      activity.type,
+      pre15Trigger,
+      `${childName}'s ${label} in 15 min ⏰`,
+      `Get ready — ${childName}'s scheduled ${label} starts in 15 minutes.`,
+      { scheduleId: activity.id, reminderStage: 'pre-15' }
+    );
+    if (pre15Identifier) {
+      scheduledNotifications.push({
+        id: pre15Id,
+        identifier: pre15Identifier,
+        childId: activity.child_id,
+        type: activity.type,
+        hour: pre15Trigger.getHours(),
+        minute: pre15Trigger.getMinutes(),
+      });
+    }
+  }
+
+  // Notifications at min/max duration boundaries (if set)
   const minTrigger =
     minMinutes != null
       ? new Date(start.getTime() + Math.max(0, minMinutes - 5) * 60000)
@@ -283,7 +343,9 @@ export async function scheduleScheduledActivityNotifications(
 
 async function schedulePendingScheduledActivityNotifications(child: Child): Promise<void> {
   try {
-    const activities = await getScheduledActivities(child.id, 'pending');
+    const activities = await getScheduledActivities(child.id, 'pending', {
+      fromStartTime: new Date().toISOString(),
+    });
     for (const activity of activities) {
       await scheduleScheduledActivityNotifications(activity, child.name);
     }
@@ -327,22 +389,24 @@ export async function scheduleChildNotifications(
     timeStr: string | null,
     titleFn: (n: string) => string,
     bodyFn: (n: string) => string,
-    offsetMinutes = 0
+    offsetMinutes = 0,
+    isExtra = false
   ) => {
+    const skippedType = isExtra ? `${type}-extra` : type;
     if (!isEnabled(type)) {
-      skipped.push(type);
+      skipped.push(skippedType);
       if (__DEV__) {
-        console.log(`[Notifications] ${type} for ${name} — toggle is OFF, skipping`);
+        console.log(`[Notifications] ${skippedType} for ${name} — toggle is OFF, skipping`);
       }
       return;
     }
     const parsed = parseTime(timeStr);
     if (!parsed) {
-      skipped.push(`${type} (no time set)`);
+      skipped.push(`${skippedType} (no time set)`);
       return;
     }
     const adjusted = offsetTime(parsed.hour, parsed.minute, offsetMinutes);
-    const id = `${type}-${child.id}`;
+    const id = `${type}-${child.id}${isExtra ? '-extra' : ''}`;
     const identifier = await scheduleDaily(
       id, child.id, type,
       adjusted.hour, adjusted.minute,
@@ -365,7 +429,7 @@ export async function scheduleChildNotifications(
     (n) => `${n}'s wake-up time. How did they sleep?`
   );
 
-  // Meals
+  // Meals — on-time reminder
   await addNotif('breakfast', child.breakfast_time,
     (n) => `Breakfast time for ${n} 🍳`,
     (n) => `Time for ${n}'s breakfast. Don't forget to log it!`
@@ -402,6 +466,70 @@ export async function scheduleChildNotifications(
     (n) => `${n}'s scheduled learning time. Happy studying!`
   );
 
+  // ── 15-min pre-reminders (extra notifications) ─────────────────────
+  await addNotif('bedtime', child.bedtime,
+    (n) => `Bedtime for ${n} in 15 min 🌙`,
+    (n) => `${n}'s bedtime is in 15 minutes. Time to start winding down!`,
+    -15,
+    true
+  );
+
+  await addNotif('wake_up', child.wake_up_time,
+    (n) => `Wake up, ${n}! ☀️`,
+    (n) => `${n}'s wake-up time is in 15 minutes.`,
+    -15,
+    true
+  );
+
+  await addNotif('breakfast', child.breakfast_time,
+    (n) => `Breakfast for ${n} in 15 min 🍳`,
+    (n) => `${n}'s breakfast is in 15 minutes.`,
+    -15,
+    true
+  );
+
+  await addNotif('lunch', child.lunch_time,
+    (n) => `Lunch for ${n} in 15 min 🍚`,
+    (n) => `${n}'s lunch is in 15 minutes.`,
+    -15,
+    true
+  );
+
+  await addNotif('snack', child.snack_time,
+    (n) => `Snack for ${n} in 15 min 🍎`,
+    (n) => `${n}'s snack is in 15 minutes.`,
+    -15,
+    true
+  );
+
+  await addNotif('dinner', child.dinner_time,
+    (n) => `Dinner for ${n} in 15 min 🍲`,
+    (n) => `${n}'s dinner is in 15 minutes.`,
+    -15,
+    true
+  );
+
+  await addNotif('nap', child.nap_time,
+    (n) => `Nap for ${n} in 15 min 😴`,
+    (n) => `${n}'s nap is in 15 minutes.`,
+    -15,
+    true
+  );
+
+  await addNotif('activity', child.activity_time,
+    (n) => `Activity for ${n} in 15 min 🏃`,
+    (n) => `${n}'s activity time is in 15 minutes.`,
+    -15,
+    true
+  );
+
+  await addNotif('learn', child.learn_time,
+    (n) => `Learning for ${n} in 15 min 📚`,
+    (n) => `${n}'s learning time is in 15 minutes.`,
+    -15,
+    true
+  );
+
   // Weekly growth check reminder
   if (isEnabled('weekly_growth')) {
     await scheduleWeeklyGrowthReminder(child, true);
@@ -412,7 +540,9 @@ export async function scheduleChildNotifications(
     }
   }
 
-  // One-off reminders for pending scheduled activities (5 min before min/max duration)
+  // Also restore pending scheduled activity notifications after reinstall / app restart.
+  // scheduleChildNotifications is called on every child profile save and on app startup,
+  // so this ensures one-time scheduled-activity notifications are re-registered with the OS.
   await schedulePendingScheduledActivityNotifications(child);
 
   const scheduledCount = scheduledNotifications.filter(n => n.childId === child.id).length;
